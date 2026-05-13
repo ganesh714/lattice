@@ -56,11 +56,18 @@ export class FileSystemTools {
         return matches.length > 0 ? matches.join('\n') : "No matches found.";
     }
 
-    static async applyEditDiff(workspacePath: string, relativePath: string, searchBlock: string, replaceBlock: string): Promise<boolean> {
+    static async applyEditDiff(workspacePath: string, relativePath: string, searchBlock: string, replaceBlock: string): Promise<boolean | string> {
         const absolutePath = path.isAbsolute(relativePath) ? relativePath : path.join(workspacePath, relativePath);
         const targetUri = vscode.Uri.file(absolutePath);
         const document = await vscode.workspace.openTextDocument(targetUri);
         const fileContent = document.getText();
+
+        // Validate that the provided searchBlock includes at least 3 lines
+        const searchLines = searchBlock.split('\n');
+        // Count non-empty lines as context (but keep empty lines as valid context too)
+        if (searchLines.length < 3) {
+            return "Validation Failed: You must provide at least 3 lines of surrounding context in the search_block to ensure a unique match. Please try again.";
+        }
 
         if (!fileContent.includes(searchBlock)) {
             return false;
