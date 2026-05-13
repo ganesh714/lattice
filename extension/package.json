@@ -1,8 +1,8 @@
 {
-  "name": "omrix",
-  "displayName": "Omrix Chat",
-  "description": "Omrix AI Chatbot",
-  "version": "0.0.1",
+  "name": "lattice",
+  "displayName": "Lattice AI",
+  "description": "Lattice: A multi-tier agentic AI coding assistant.",
+  "version": "0.1.0",
   "engines": {
     "vscode": "^1.84.0"
   },
@@ -11,20 +11,40 @@
   ],
   "main": "./out/extension.js",
   "contributes": {
+    "configuration": {
+      "title": "Lattice",
+      "properties": {
+        "lattice.apiKeys.gemini": {
+          "type": "string",
+          "default": "",
+          "description": "Google Gemini API Key"
+        },
+        "lattice.apiKeys.groq": {
+          "type": "string",
+          "default": "",
+          "description": "Groq API Key"
+        },
+        "lattice.local.ollamaEndpoint": {
+          "type": "string",
+          "default": "http://127.0.0.1:11434",
+          "description": "Ollama Local Endpoint"
+        }
+      }
+    },
     "viewsContainers": {
       "secondarySideBar": [
         {
-          "id": "omrix-sidebar",
-          "title": "Omrix",
+          "id": "lattice-sidebar",
+          "title": "Lattice",
           "icon": "$(comment-discussion)"
         }
       ]
     },
     "views": {
-      "omrix-sidebar": [
+      "lattice-sidebar": [
         {
           "type": "webview",
-          "id": "omrix.chatView",
+          "id": "lattice.chatView",
           "name": "Chat",
           "icon": "$(comment-discussion)"
         }
@@ -36,6 +56,10 @@
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
     "pretest": "npm run compile && npm run lint"
+  },
+  "dependencies": {
+    "@google/generative-ai": "^0.1.0",
+    "groq-sdk": "^0.1.0"
   },
   "devDependencies": {
     "@types/vscode": "^1.74.0",
