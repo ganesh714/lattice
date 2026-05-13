@@ -80,6 +80,22 @@
                 }
                 chatHistory.scrollTop = chatHistory.scrollHeight;
                 break;
+            case 'statusUpdate':
+                // Update subtext on the active loading indicator if present
+                const loader = document.getElementById('loading-indicator');
+                if (loader) {
+                    let sub = loader.querySelector('.status-subtext');
+                    if (!sub) {
+                        sub = document.createElement('div');
+                        sub.className = 'status-subtext';
+                        sub.style.fontStyle = 'italic';
+                        sub.style.fontSize = '0.9em';
+                        sub.style.marginTop = '6px';
+                        loader.appendChild(sub);
+                    }
+                    sub.textContent = message.value;
+                }
+                break;
             case 'removeLoading':
                 const loader = document.getElementById('loading-indicator');
                 if (loader) loader.remove();
@@ -87,8 +103,43 @@
             case 'generationFinished':
                 setGeneratingState(false);
                 break;
+            case 'debugUpdate':
+                renderDebugPanel(message.chat_history, message.tool_history);
+                break;
         }
     });
+
+    function renderDebugPanel(chatHistoryData, toolHistoryData) {
+        let panel = document.getElementById('debug-panel');
+        if (!panel) {
+            panel = document.createElement('details');
+            panel.id = 'debug-panel';
+            panel.className = 'debug-panel';
+            const summary = document.createElement('summary');
+            summary.textContent = 'Debug: Executor State (click to expand)';
+            panel.appendChild(summary);
+
+            const container = document.createElement('div');
+            container.className = 'debug-contents';
+            panel.appendChild(container);
+            document.body.appendChild(panel);
+        }
+
+        const container = panel.querySelector('.debug-contents');
+        container.innerHTML = '';
+
+        const chatPre = document.createElement('pre');
+        chatPre.className = 'debug-chat';
+        chatPre.textContent = 'Chat History:\n' + JSON.stringify(chatHistoryData, null, 2);
+
+        const toolPre = document.createElement('pre');
+        toolPre.className = 'debug-tools';
+        toolPre.textContent = 'Tool History:\n' + JSON.stringify(toolHistoryData, null, 2);
+
+        container.appendChild(chatPre);
+        container.appendChild(toolPre);
+        panel.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    }
 
     function appendMessage(text, isUser = false, isLoading = false, isError = false) {
         const msgDiv = document.createElement('div');
