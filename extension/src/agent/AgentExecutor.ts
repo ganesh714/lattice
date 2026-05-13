@@ -4,6 +4,8 @@ import { ChatRequest, ToolResponse, AIResponse, ChatMessage } from '../types/sch
 import { ModelFactory } from '../models/ModelFactory';
 import { ContextEngine } from './ContextEngine';
 import { FileSystemTools } from '../tools/FileSystem';
+import { LspIntelligence } from '../tools/LspIntelligence';
+import { TerminalTools } from '../tools/Terminal';
 import { Router } from './Router';
 import { Critic } from './Critic';
 
@@ -128,8 +130,8 @@ export class AgentExecutor {
                             if (success) {
                                 toolResultContent = `Successfully edited ${targetPath}.`;
                                 // Phase 4: Self-Healing (Compiler Loop)
-                                const diagnostics = await FileSystemTools.getWorkspaceDiagnostics();
-                                if (diagnostics !== "No active diagnostics found.") {
+                                const diagnostics = await LspIntelligence.getWorkspaceDiagnostics();
+                                if (diagnostics !== "No active diagnostics found. Workspace is clean.") {
                                     this.ui.addStep('💊', 'Self-Healing', 'Checking diagnostics');
                                     toolResultContent += `\n\nCRITICAL: Workspace has errors/warnings after edit:\n${diagnostics}\n\nPlease fix these errors immediately.`;
                                 }
@@ -140,7 +142,9 @@ export class AgentExecutor {
                             toolResultContent = `CRITICAL ALERT: The user REJECTED this edit. Stop this path and ask for instructions.`;
                         }
                     } else if (toolName === 'get_workspace_diagnostics') {
-                        toolResultContent = await FileSystemTools.getWorkspaceDiagnostics();
+                        toolResultContent = await LspIntelligence.getWorkspaceDiagnostics();
+                    } else if (toolName === 'execute_command') {
+                        toolResultContent = await TerminalTools.executeCommand(toolArgs.command);
                     }
                 } catch (err: any) {
                     toolResultContent = `Error executing ${toolName}: ${err.message}`;
@@ -164,6 +168,7 @@ export class AgentExecutor {
         else if (toolName === 'edit_file_diff') { icon = '✏️'; action = 'Editing'; }
         else if (toolName === 'search_workspace_regex') { icon = '🔍'; action = 'Searching'; targetPath = String(extra); }
         else if (toolName === 'get_workspace_diagnostics') { icon = '💊'; action = 'Diagnostics'; targetPath = 'Workspace'; }
+        else if (toolName === 'execute_command') { icon = '💻'; action = 'Terminal'; targetPath = String(extra); }
         this.ui.addStep(icon, action, targetPath);
     }
 }
