@@ -45,9 +45,36 @@ export class ContextEngine {
      * Assembles the "Passive Context" (active viewport, .latticerules, etc.)
      */
     static async getPassiveContext(): Promise<string> {
-        // In the future, this will parse .latticerules and recent file trajectory.
-        // For now, it provides basic workspace context.
+        let context = "";
+        
+        // 1. Project-specific Rules (.latticerules)
+        const workspaceFolders = vscode.workspace.workspaceFolders;
+        if (workspaceFolders) {
+            const rulesUri = vscode.Uri.joinPath(workspaceFolders[0].uri, '.latticerules');
+            try {
+                const uint8Array = await vscode.workspace.fs.readFile(rulesUri);
+                const rules = new TextDecoder().decode(uint8Array);
+                context += `\n[Project Rules (.latticerules)]:\n${rules}\n`;
+            } catch (e) {
+                // Rules file doesn't exist or is inaccessible
+            }
+        }
+
+        // 2. Active Selection Context
+        const editor = vscode.window.activeTextEditor;
+        if (editor) {
+            const doc = editor.document;
+            const selection = editor.selection;
+            const relativePath = vscode.workspace.asRelativePath(doc.uri);
+            
+            context += `\n[Active File]: ${relativePath}`;
+            if (!selection.isEmpty) {
+                const selectedText = doc.getText(selection);
+                context += `\n[User Selection]:\n${selectedText}\n`;
+            }
+        }
+
         const workspacePath = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || 'Unknown';
-        return `Current Workspace: ${workspacePath}\nRules: Please follow SOLID principles and maintain consistent indentation.`;
+        return `Current Workspace: ${workspacePath}${context}\n\nGeneral Instruction: Please follow SOLID principles and maintain consistent indentation.`;
     }
 }
