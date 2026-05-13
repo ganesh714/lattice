@@ -56,5 +56,16 @@ export const LATTICE_TOOLS = [
             properties: {},
             required: []
         }
+    },
+    {
+        name: "execute_command",
+        description: "Executes a shell command in the integrated terminal. Use this for building, testing, or running scripts.",
+        parameters: {
+            type: "object",
+            properties: {
+                command: { type: "string", description: "The shell command to execute." }
+            },
+            required: ["command"]
+        }
     }
 ];
