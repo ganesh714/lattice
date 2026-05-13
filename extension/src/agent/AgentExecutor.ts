@@ -4,6 +4,8 @@ import { ChatRequest, ToolResponse, AIResponse, ChatMessage } from '../types/sch
 import { ModelFactory } from '../models/ModelFactory';
 import { ContextEngine } from './ContextEngine';
 import { FileSystemTools } from '../tools/FileSystem';
+import { Router } from './Router';
+import { Critic } from './Critic';
 
 export interface IAgentUI {
     addStep(icon: string, action: string, target: string): void;
@@ -28,12 +30,65 @@ export class AgentExecutor {
         this.toolHistory = [];
         this.consecutiveToolCalls = 0;
 
+        // Phase 1: Intent Routing (L0)
+        this.ui.setLoading("Classifying intent...");
+        const intent = await Router.classify(prompt, this.chatHistory);
+        this.ui.addStep('🧠', 'Routing', intent === 'code_edit' ? 'Work Path (Code Edit)' : 'Chat Path');
+
+        if (intent === 'chat') {
+            return this.runChatFlow(prompt, model);
+        }
+
+        // Phase 2: Planning & Critic Loop (L2)
+        this.ui.setLoading("Architecting plan...");
+        let plan = await this.generatePlan(prompt, model);
+        this.ui.addStep('📝', 'Planning', 'Drafting implementation steps');
+
+        this.ui.setLoading("Reviewing plan...");
+        const review = await Critic.reviewPlan(prompt, plan, this.chatHistory);
+        if (!review.approved) {
+            this.ui.addStep('⚠️', 'Critic Review', 'Correction suggested');
+            this.ui.setLoading("Refining plan...");
+            plan = await this.refinePlan(prompt, plan, review.feedback || '', model);
+            this.ui.addStep('🔄', 'Planning', 'Plan refined based on Critic feedback');
+        } else {
+            this.ui.addStep('✅', 'Critic Review', 'Plan approved by Senior Architect');
+        }
+
+        // Phase 3 & 4: Surgical Execution & Self-Healing
+        return this.runExecutionFlow(prompt, plan, model);
+    }
+
+    private async runChatFlow(prompt: string, model: string): Promise<string> {
+        const systemInstruction = `You are Lattice, an expert AI assistant. Answer the user's question clearly and concisely.`;
+        const request = {
+            prompt,
+            model,
+            workspace: this.workspacePath,
+            tool_history: [],
+            chat_history: this.chatHistory
+        };
+        const response = await ModelFactory.generateWithFallback(request, systemInstruction);
+        return response.type === 'message' ? response.content : "Error in chat flow.";
+    }
+
+    private async generatePlan(prompt: string, model: string): Promise<string> {
+        const systemInstruction = "Create a detailed step-by-step plan to implement the user's request. Do not call tools yet. Be specific about which files will be modified.";
+        const request = { prompt, model, workspace: this.workspacePath, tool_history: [], chat_history: this.chatHistory };
+        const response = await ModelFactory.generateWithFallback(request, systemInstruction);
+        return response.type === 'message' ? response.content : "Failed to generate plan.";
+    }
+
+    private async refinePlan(prompt: string, oldPlan: string, feedback: string, model: string): Promise<string> {
+        const promptText = `Original Request: ${prompt}\n\nDraft Plan: ${oldPlan}\n\nArchitect Feedback: ${feedback}\n\nPlease provide a refined, corrected plan.`;
+        return this.generatePlan(promptText, model);
+    }
+
+    private async runExecutionFlow(prompt: string, plan: string, model: string): Promise<string> {
         let isDone = false;
-        let finalResponseText = "No response field returned.";
-        let currentPrompt = prompt;
+        let currentPrompt = `Execute this plan: ${plan}\n\nOriginal Request: ${prompt}`;
 
         while (!isDone) {
-            // 1. Prepare Request
             let request: ChatRequest = {
                 prompt: currentPrompt,
                 model: model,
@@ -42,14 +97,10 @@ export class AgentExecutor {
                 chat_history: this.chatHistory
             };
 
-            // 2. Prune Context
             request = ContextEngine.pruneContext(request);
-
-            // 3. Gather Passive Context
             const passiveContext = await ContextEngine.getPassiveContext();
-            const systemInstruction = `You are Lattice, an expert AI coding assistant. ${passiveContext}`;
+            const systemInstruction = `You are Lattice. Execute the implementation plan surgically. ${passiveContext}`;
 
-            // 4. Generate AI Response
             this.ui.setLoading("Thinking...");
             const data: AIResponse = await ModelFactory.generateWithFallback(request, systemInstruction);
 
@@ -60,58 +111,59 @@ export class AgentExecutor {
                 let toolResultContent = '';
 
                 this.ui.removeLoading();
-                this.updateUIStep(toolName, targetPath, toolArgs.query);
+                this.updateUIStep(toolName, targetPath, toolArgs.query || toolArgs.pattern);
                 this.ui.setLoading(`Executing ${toolName}...`);
 
                 try {
-                    if (toolName === 'read_file') {
-                        toolResultContent = await FileSystemTools.readFile(this.workspacePath, targetPath);
-                    } else if (toolName === 'list_directory') {
-                        toolResultContent = await FileSystemTools.listDirectory(this.workspacePath, targetPath);
-                    } else if (toolName === 'search_in_files') {
-                        toolResultContent = await FileSystemTools.searchInFiles(this.workspacePath, toolArgs.query);
-                    } else if (toolName === 'modify_file') {
-                        const approved = await this.ui.askApproval(targetPath, toolArgs.old_text, toolArgs.new_text);
+                    if (toolName === 'read_file_chunk') {
+                        toolResultContent = await FileSystemTools.readFileChunk(this.workspacePath, targetPath, toolArgs.start_line, toolArgs.end_line);
+                    } else if (toolName === 'list_directory_tree') {
+                        toolResultContent = await FileSystemTools.listDirectoryTree(this.workspacePath, targetPath, toolArgs.depth);
+                    } else if (toolName === 'search_workspace_regex') {
+                        toolResultContent = await FileSystemTools.searchWorkspaceRegex(toolArgs.pattern);
+                    } else if (toolName === 'edit_file_diff') {
+                        const approved = await this.ui.askApproval(targetPath, toolArgs.search_block, toolArgs.replace_block);
                         if (approved) {
-                            const success = await FileSystemTools.applyEdit(this.workspacePath, targetPath, toolArgs.old_text, toolArgs.new_text);
-                            toolResultContent = success 
-                                ? `Successfully applied edit to ${targetPath}.` 
-                                : `Error: Exact old_text not found in ${targetPath}.`;
+                            const success = await FileSystemTools.applyEditDiff(this.workspacePath, targetPath, toolArgs.search_block, toolArgs.replace_block);
+                            if (success) {
+                                toolResultContent = `Successfully edited ${targetPath}.`;
+                                // Phase 4: Self-Healing (Compiler Loop)
+                                const diagnostics = await FileSystemTools.getWorkspaceDiagnostics();
+                                if (diagnostics !== "No active diagnostics found.") {
+                                    this.ui.addStep('💊', 'Self-Healing', 'Checking diagnostics');
+                                    toolResultContent += `\n\nCRITICAL: Workspace has errors/warnings after edit:\n${diagnostics}\n\nPlease fix these errors immediately.`;
+                                }
+                            } else {
+                                toolResultContent = `Error: The exact search_block was not found in ${targetPath}. Check whitespace and indentation.`;
+                            }
                         } else {
-                            toolResultContent = `CRITICAL: User rejected the edit to ${targetPath}. Stop and ask for clarification.`;
+                            toolResultContent = `CRITICAL ALERT: The user REJECTED this edit. Stop this path and ask for instructions.`;
                         }
+                    } else if (toolName === 'get_workspace_diagnostics') {
+                        toolResultContent = await FileSystemTools.getWorkspaceDiagnostics();
                     }
                 } catch (err: any) {
-                    toolResultContent = `Error: ${err.message}`;
+                    toolResultContent = `Error executing ${toolName}: ${err.message}`;
                 }
 
-                this.toolHistory.push({
-                    tool_name: toolName,
-                    content: toolResultContent,
-                    arguments: toolArgs
-                });
-
+                this.toolHistory.push({ tool_name: toolName, content: toolResultContent, arguments: toolArgs });
                 this.consecutiveToolCalls++;
                 if (this.consecutiveToolCalls > this.MAX_CONSECUTIVE_TOOLS) {
-                    finalResponseText = "Maximum tool calls exceeded.";
-                    isDone = true;
+                    return "Maximum tool calls exceeded. Stopping to prevent loop.";
                 }
             } else {
-                finalResponseText = data.content;
-                isDone = true;
+                return data.content;
             }
         }
-
-        return finalResponseText;
+        return "Implementation completed.";
     }
 
-    private updateUIStep(toolName: string, targetPath: string, query?: string) {
-        let icon = '📂';
-        let action = 'Scanning';
-        if (toolName === 'read_file') { icon = '📄'; action = 'Reading'; }
-        else if (toolName === 'modify_file') { icon = '✏️'; action = 'Editing'; }
-        else if (toolName === 'search_in_files') { icon = '🔍'; action = 'Searching'; targetPath = query || ''; }
-        
+    private updateUIStep(toolName: string, targetPath: string, extra?: any) {
+        let icon = '📂'; let action = 'Scanning';
+        if (toolName === 'read_file_chunk') { icon = '📄'; action = 'Reading'; }
+        else if (toolName === 'edit_file_diff') { icon = '✏️'; action = 'Editing'; }
+        else if (toolName === 'search_workspace_regex') { icon = '🔍'; action = 'Searching'; targetPath = String(extra); }
+        else if (toolName === 'get_workspace_diagnostics') { icon = '💊'; action = 'Diagnostics'; targetPath = 'Workspace'; }
         this.ui.addStep(icon, action, targetPath);
     }
 }

@@ -1,66 +1,60 @@
 export const LATTICE_TOOLS = [
     {
-        name: "list_directory",
-        description: "Lists the files and folders inside a specific directory within the workspace. Use this to understand the project structure.",
+        name: "list_directory_tree",
+        description: "Returns a clean JSON-like structure of folders and files. Use this to map the project layout.",
         parameters: {
             type: "object",
             properties: {
-                relative_path: {
-                    type: "string",
-                    description: "The path to the directory to list."
-                }
+                relative_path: { type: "string", description: "The directory to scan." },
+                depth: { type: "number", description: "How many levels deep to scan." }
             },
             required: ["relative_path"]
         }
     },
     {
-        name: "read_file",
-        description: "Reads the content of a file within the workspace. Use this to inspect source code or text files.",
+        name: "read_file_chunk",
+        description: "Reads specific lines from a file to save tokens. Recommended for large source files.",
         parameters: {
             type: "object",
             properties: {
-                relative_path: {
-                    type: "string",
-                    description: "The path to the file to read."
-                }
+                relative_path: { type: "string", description: "The file path." },
+                start_line: { type: "number", description: "Start line number (1-indexed)." },
+                end_line: { type: "number", description: "End line number." }
             },
-            required: ["relative_path"]
+            required: ["relative_path", "start_line", "end_line"]
         }
     },
     {
-        name: "modify_file",
-        description: "Modifies an existing file by replacing a block of text. Use this to edit or update code/content inside a file.",
+        name: "edit_file_diff",
+        description: "The SAFEST way to edit code. Replaces an exact 'search_block' with a 'replace_block'. Always include 3 lines of surrounding code in the search block to ensure the correct match.",
         parameters: {
             type: "object",
             properties: {
-                relative_path: {
-                    type: "string",
-                    description: "The path to the file to modify."
-                },
-                old_text: {
-                    type: "string",
-                    description: "The exact text to be replaced. Must match exactly what is in the file."
-                },
-                new_text: {
-                    type: "string",
-                    description: "The new text to insert in place of the old_text."
-                }
+                relative_path: { type: "string", description: "The file path." },
+                search_block: { type: "string", description: "The exact code block to find (include indentation)." },
+                replace_block: { type: "string", description: "The new code block to insert." }
             },
-            required: ["relative_path", "old_text", "new_text"]
+            required: ["relative_path", "search_block", "replace_block"]
         }
     },
     {
-        name: "search_in_files",
-        description: "Searches for a specific string or pattern across all files in the workspace. Use this to find variables, configurations, or specific code snippets.",
+        name: "search_workspace_regex",
+        description: "Performs a regex-based search across the workspace. Faster and cleaner than grep.",
         parameters: {
             type: "object",
             properties: {
-                query: {
-                    type: "string",
-                    description: "The text or string to search for."
-                }
+                pattern: { type: "string", description: "The regex pattern to search for." }
             },
-            required: ["query"]
+            required: ["pattern"]
+        }
+    },
+    {
+        name: "get_workspace_diagnostics",
+        description: "Pulls all active IDE errors and warnings. Use this for 'Self-Healing'.",
+        parameters: {
+            type: "object",
+            properties: {},
+            required: []
         }
     }
 ];
