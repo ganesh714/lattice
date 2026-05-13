@@ -76,23 +76,4 @@ export class FileSystemTools {
         return await vscode.workspace.applyEdit(edit);
     }
 
-    static async getWorkspaceDiagnostics(): Promise<string> {
-        const diagnostics = vscode.languages.getDiagnostics();
-        let result = "";
-        for (const [uri, diagList] of diagnostics) {
-            if (diagList.length > 0) {
-                const relativePath = vscode.workspace.asRelativePath(uri);
-                let fileResult = `File: ${relativePath}\n`;
-                let hasImportant = false;
-                for (const diag of diagList) {
-                    if (diag.severity === vscode.DiagnosticSeverity.Error || diag.severity === vscode.DiagnosticSeverity.Warning) {
-                        fileResult += `  [${vscode.DiagnosticSeverity[diag.severity]}] Line ${diag.range.start.line + 1}: ${diag.message}\n`;
-                        hasImportant = true;
-                    }
-                }
-                if (hasImportant) result += fileResult;
-            }
-        }
-        return result || "No active diagnostics found.";
-    }
 }
