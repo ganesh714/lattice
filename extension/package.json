@@ -59,7 +59,8 @@
   },
   "dependencies": {
     "@google/generative-ai": "^0.1.0",
-    "groq-sdk": "^0.1.0"
+    "groq-sdk": "^0.1.0",
+    "onnxruntime-node": "^1.17.0"
   },
   "devDependencies": {
     "@types/vscode": "^1.74.0",
