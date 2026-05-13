@@ -1,5 +1,5 @@
 import { ModelFactory } from '../models/ModelFactory';
-import { ChatMessage } from '../types/schemas';
+import { ChatMessage, ToolResponse } from '../types/schemas';
 
 /**
  * Lattice L2 Critic
@@ -54,5 +54,34 @@ export class Critic {
             }
         } catch (e) {}
         return "Session summary unavailable.";
+    }
+
+    /**
+     * Compress the combined chat and tool history into a dense, action-oriented summary for memory pruning.
+     * Returns a concise summary string that can replace long `chat_history` and `tool_history`.
+     */
+    static async compressSession(chat_history: ChatMessage[], tool_history: ToolResponse[]): Promise<string> {
+        const systemInstruction = `You are the Lattice L2 Critic (Senior Architect). Analyze the provided chat and tool execution history and produce a dense, highly concise summary (150-250 words) that includes: 1) the user's requested goal, 2) which files were modified and why, 3) the current state of the codebase (notable errors or outstanding issues), and 4) any recommended follow-up actions. Do NOT include conversational filler. Output only the summary.`;
+
+        const mergedPrompt = `Chat History:\n${JSON.stringify(chat_history, null, 2)}\n\nTool History:\n${JSON.stringify(tool_history, null, 2)}`;
+
+        const request = {
+            prompt: mergedPrompt,
+            model: 'gemini-pro',
+            workspace: '',
+            tool_history: tool_history,
+            chat_history: chat_history
+        };
+
+        try {
+            const response = await ModelFactory.generateWithFallback(request, systemInstruction);
+            if (response.type === 'message') {
+                return response.content.trim();
+            }
+        } catch (e) {
+            console.error('[Lattice] compressSession failed:', e);
+        }
+
+        return 'Session compression unavailable.';
     }
 }
