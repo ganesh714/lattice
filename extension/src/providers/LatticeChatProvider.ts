@@ -15,6 +15,16 @@ export class LatticeChatProvider implements vscode.WebviewViewProvider, IAgentUI
     private _diffProviderRegistration?: vscode.Disposable;
     private _pendingDiffUris = new Map<string, string>();
     private _debugInterval?: NodeJS.Timeout;
+    
+    // Settings storage
+    private _settings: {
+        geminiApi?: string;
+        groqApi?: string;
+        ollamaUrl?: string;
+        l1Model?: string;
+        l2Model?: string;
+        availableModels?: { gemini: string[]; groq: string[]; ollama: string[] };
+    } = {};
 
     constructor(
         private readonly _extensionUri: vscode.Uri,
@@ -45,6 +55,10 @@ export class LatticeChatProvider implements vscode.WebviewViewProvider, IAgentUI
 
     statusUpdate(text: string) {
         this._view?.webview.postMessage({ type: 'statusUpdate', value: text });
+    }
+
+    getSettings() {
+        return this._settings;
     }
 
     async askApproval(target: string, oldText: string, newText: string): Promise<boolean> {
@@ -106,6 +120,10 @@ export class LatticeChatProvider implements vscode.WebviewViewProvider, IAgentUI
                 const workspacePath = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || '';
                 if (!this._executor) this._executor = new AgentExecutor(this, workspacePath);
                 await this.handlePrompt(message.text, message.model);
+            } else if (message.type === 'updateSettings') {
+                // Store settings from the webview
+                this._settings = message.settings || {};
+                console.log('[Lattice] Settings updated:', this._settings);
             } else if (message.type === 'approveEdit' || message.type === 'rejectEdit') {
                 const pending = this._pendingApprovals.get(message.id);
                 if (pending) {
@@ -152,13 +170,16 @@ export class LatticeChatProvider implements vscode.WebviewViewProvider, IAgentUI
         // Use the persistent executor if available
         const executor = this._executor || new AgentExecutor(this, vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || '');
 
+        // Use L1 model from settings if available, otherwise use the passed model
+        const l1Model = this._settings.l1Model || model || 'gemini';
+
         // 1. Setup UI
         this._view.webview.postMessage({ type: 'addMessage', text: prompt, isUser: true });
         this._view.webview.postMessage({ type: 'startBotMessage' });
 
         try {
             // 2. Run Executor (The Agentic Loop)
-            const finalResponseText = await executor.execute(prompt, model, this._chatHistory);
+            const finalResponseText = await executor.execute(prompt, l1Model, this._chatHistory, this._settings);
 
             // 3. Finalize UI
             this._view.webview.postMessage({ type: 'removeLoading' });

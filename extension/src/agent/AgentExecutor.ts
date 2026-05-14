@@ -40,7 +40,7 @@ export class AgentExecutor {
         return JSON.parse(JSON.stringify(this.toolHistory));
     }
 
-    async execute(prompt: string, model: string, history: ChatMessage[]): Promise<string> {
+    async execute(prompt: string, model: string, history: ChatMessage[], settings?: any): Promise<string> {
         this.chatHistory = [...history];
         this.toolHistory = [];
         this.consecutiveToolCalls = 0;
