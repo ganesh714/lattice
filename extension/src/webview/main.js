@@ -4,6 +4,10 @@
     const promptInput = document.getElementById('prompt-input');
     const sendButton = document.getElementById('send-button');
     const modelSelector = document.getElementById('model-selector');
+    // Settings elements
+    const geminiApiInput = document.getElementById('gemini-api');
+    const l1ModelSelect = document.getElementById('l1-model');
+    const l2ModelSelect = document.getElementById('l2-model');
 
     let currentBotContainer = null;
     let currentStepsDetails = null;
@@ -274,12 +278,16 @@
     }
 
     sendButton.addEventListener('click', handleSendOrStop);
+    // Send on Enter, allow Shift+Enter for newline. Also allow Ctrl/Cmd+Enter.
     promptInput.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' && !e.shiftKey) {
+        const isEnter = e.key === 'Enter';
+        const isModifierEnter = (e.key === 'Enter' && (e.ctrlKey || e.metaKey));
+        if (isEnter && !e.shiftKey) {
             e.preventDefault();
-            if (!isGenerating) {
-                sendPrompt();
-            }
+            if (!isGenerating) sendPrompt();
+        } else if (isModifierEnter) {
+            e.preventDefault();
+            if (!isGenerating) sendPrompt();
         }
     });
     
@@ -290,4 +298,25 @@
     });
 
     promptInput.focus();
+
+    // Load persisted state from extension (if any) and restore inputs
+    const saved = vscode.getState() || {};
+    if (saved.geminiApi) geminiApiInput.value = saved.geminiApi;
+    if (saved.l1Model) l1ModelSelect.value = saved.l1Model;
+    if (saved.l2Model) l2ModelSelect.value = saved.l2Model;
+
+    // Persist settings when changed and notify extension
+    const pushSettings = () => {
+        const settings = {
+            geminiApi: geminiApiInput.value,
+            l1Model: l1ModelSelect.value,
+            l2Model: l2ModelSelect.value
+        };
+        vscode.setState(settings);
+        vscode.postMessage({ type: 'updateSettings', settings });
+    };
+
+    geminiApiInput.addEventListener('change', pushSettings);
+    l1ModelSelect.addEventListener('change', pushSettings);
+    l2ModelSelect.addEventListener('change', pushSettings);
 })();

@@ -13,6 +13,27 @@
         <div class="message bot-message">Hello! I am Omrix. How can I assist you today?</div>
     </div>
     
+    <div id="settings-panel">
+        <div class="settings-row">
+            <label for="gemini-api">Gemini API Key</label>
+            <input id="gemini-api" type="password" placeholder="Enter Gemini API key" />
+        </div>
+        <div class="settings-row">
+            <label for="l1-model">L1 Model</label>
+            <select id="l1-model">
+                <option value="gemini">Gemini</option>
+                <option value="grok">Grok</option>
+                <option value="ollama">Ollama</option>
+            </select>
+            <label for="l2-model">L2 Model</label>
+            <select id="l2-model">
+                <option value="gemini-pro">Gemini-Pro</option>
+                <option value="gpt-4o">GPT-4o</option>
+                <option value="ollama">Ollama</option>
+            </select>
+        </div>
+    </div>
+    
     <div id="input-wrapper">
         <div id="copilot-input-box">
             <textarea id="prompt-input" placeholder="Ask Omrix something..." rows="1"></textarea>
