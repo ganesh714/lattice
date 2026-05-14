@@ -3,15 +3,25 @@
     const chatHistory = document.getElementById('chat-history');
     const promptInput = document.getElementById('prompt-input');
     const sendButton = document.getElementById('send-button');
-    const modelSelector = document.getElementById('model-selector');
-    // Settings elements
-    const geminiApiInput = document.getElementById('gemini-api');
-    const l1ModelSelect = document.getElementById('l1-model');
-    const l2ModelSelect = document.getElementById('l2-model');
+    
+    // Modal & Settings elements
+    const settingsModal = document.getElementById('settings-modal');
+    const settingsButton = document.querySelector('.settings-button');
+    const modalCloseBtn = document.querySelector('.modal-close-btn');
+    const settingsSaveBtn = document.getElementById('settings-save-btn');
+    const settingsCancelBtn = document.getElementById('settings-cancel-btn');
+    const geminiApiInput = document.getElementById('gemini-api-input');
+    const groqApiInput = document.getElementById('groq-api-input');
+    const ollamaUrlInput = document.getElementById('ollama-url-input');
+    const fetchOllamaModelsBtn = document.getElementById('fetch-ollama-models-btn');
+    const ollamaModelsList = document.getElementById('ollama-models-list');
+    const l1ModelSelect = document.getElementById('l1-model-select');
+    const l2ModelSelect = document.getElementById('l2-model-select');
 
     let currentBotContainer = null;
     let currentStepsDetails = null;
     let isGenerating = false;
+    let availableModels = { gemini: [], groq: [], ollama: [] };
 
     const SEND_ICON = `<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path fill-rule="evenodd" clip-rule="evenodd" d="M8.354 1.146a.5.5 0 0 0-.708 0l-6 6a.5.5 0 0 0 .708.708L7.5 2.707V14.5a.5.5 0 0 0 1 0V2.707l5.146 5.147a.5.5 0 0 0 .708-.708l-6-6z"/></svg>`;
     const STOP_ICON = `<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><rect x="3" y="3" width="10" height="10" rx="1"/></svg>`;
@@ -261,31 +271,23 @@
 
     function sendPrompt() {
         const text = promptInput.value.trim();
-        const model = modelSelector.value;
         if (!text || isGenerating) return;
 
         setGeneratingState(true);
         promptInput.value = '';
+        promptInput.style.height = 'auto';
         
         // Send the message to the extension
         vscode.postMessage({
             type: 'prompt',
-            text: text,
-            model: model
+            text: text
         });
-        // Reset height
-        promptInput.style.height = 'auto';
     }
 
     sendButton.addEventListener('click', handleSendOrStop);
-    // Send on Enter, allow Shift+Enter for newline. Also allow Ctrl/Cmd+Enter.
+    // Send on Enter (Shift+Enter for newline)
     promptInput.addEventListener('keydown', (e) => {
-        const isEnter = e.key === 'Enter';
-        const isModifierEnter = (e.key === 'Enter' && (e.ctrlKey || e.metaKey));
-        if (isEnter && !e.shiftKey) {
-            e.preventDefault();
-            if (!isGenerating) sendPrompt();
-        } else if (isModifierEnter) {
+        if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
             if (!isGenerating) sendPrompt();
         }
@@ -299,24 +301,104 @@
 
     promptInput.focus();
 
-    // Load persisted state from extension (if any) and restore inputs
+    // Load persisted settings from extension
     const saved = vscode.getState() || {};
     if (saved.geminiApi) geminiApiInput.value = saved.geminiApi;
+    if (saved.groqApi) groqApiInput.value = saved.groqApi;
+    if (saved.ollamaUrl) ollamaUrlInput.value = saved.ollamaUrl;
     if (saved.l1Model) l1ModelSelect.value = saved.l1Model;
     if (saved.l2Model) l2ModelSelect.value = saved.l2Model;
+    if (saved.availableModels) availableModels = saved.availableModels;
 
-    // Persist settings when changed and notify extension
-    const pushSettings = () => {
+    // Update L1/L2 selectors with available models from all providers
+    function updateModelSelectors() {
+        const allModels = [
+            ...availableModels.gemini.map(m => ({ value: `gemini:${m}`, label: `Gemini: ${m}` })),
+            ...availableModels.groq.map(m => ({ value: `groq:${m}`, label: `Groq: ${m}` })),
+            ...availableModels.ollama.map(m => ({ value: `ollama:${m}`, label: `Ollama: ${m}` }))
+        ];
+        
+        [l1ModelSelect, l2ModelSelect].forEach(select => {
+            const currentVal = select.value;
+            select.innerHTML = '<option value="" disabled selected>Select a model...</option>';
+            allModels.forEach(m => {
+                const opt = document.createElement('option');
+                opt.value = m.value;
+                opt.textContent = m.label;
+                select.appendChild(opt);
+            });
+            if (currentVal) select.value = currentVal;
+        });
+    }
+
+    // Fetch Ollama models from the URL
+    async function fetchOllamaModels() {
+        const url = ollamaUrlInput.value.trim();
+        if (!url) {
+            alert('Please enter Ollama URL first');
+            return;
+        }
+        try {
+            const res = await fetch(`${url}/api/tags`);
+            const data = await res.json();
+            const models = data.models?.map(m => m.name) || [];
+            availableModels.ollama = models;
+            
+            // Update Ollama models list in the modal
+            ollamaModelsList.innerHTML = '';
+            if (models.length === 0) {
+                ollamaModelsList.innerHTML = '<option disabled>No models found</option>';
+            } else {
+                models.forEach(m => {
+                    const opt = document.createElement('option');
+                    opt.textContent = m;
+                    ollamaModelsList.appendChild(opt);
+                });
+            }
+            
+            updateModelSelectors();
+            saveSettings();
+        } catch (e) {
+            alert(`Failed to fetch Ollama models: ${e.message}`);
+        }
+    }
+
+    // Save settings and notify extension
+    function saveSettings() {
         const settings = {
             geminiApi: geminiApiInput.value,
+            groqApi: groqApiInput.value,
+            ollamaUrl: ollamaUrlInput.value,
             l1Model: l1ModelSelect.value,
-            l2Model: l2ModelSelect.value
+            l2Model: l2ModelSelect.value,
+            availableModels
         };
         vscode.setState(settings);
         vscode.postMessage({ type: 'updateSettings', settings });
-    };
+    }
 
-    geminiApiInput.addEventListener('change', pushSettings);
-    l1ModelSelect.addEventListener('change', pushSettings);
-    l2ModelSelect.addEventListener('change', pushSettings);
+    // Modal handlers
+    function openModal() {
+        settingsModal.classList.remove('hidden');
+    }
+
+    function closeModal() {
+        settingsModal.classList.add('hidden');
+    }
+
+    settingsButton.addEventListener('click', openModal);
+    modalCloseBtn.addEventListener('click', closeModal);
+    settingsCancelBtn.addEventListener('click', closeModal);
+    settingsSaveBtn.addEventListener('click', () => {
+        saveSettings();
+        closeModal();
+    });
+    
+    fetchOllamaModelsBtn.addEventListener('click', fetchOllamaModels);
+    
+    // Close modal on overlay click
+    document.querySelector('.modal-overlay').addEventListener('click', closeModal);
+
+    // Initialize model selectors
+    updateModelSelectors();
 })();

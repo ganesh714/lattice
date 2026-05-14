@@ -13,27 +13,6 @@
         <div class="message bot-message">Hello! I am Omrix. How can I assist you today?</div>
     </div>
     
-    <div id="settings-panel">
-        <div class="settings-row">
-            <label for="gemini-api">Gemini API Key</label>
-            <input id="gemini-api" type="password" placeholder="Enter Gemini API key" />
-        </div>
-        <div class="settings-row">
-            <label for="l1-model">L1 Model</label>
-            <select id="l1-model">
-                <option value="gemini">Gemini</option>
-                <option value="grok">Grok</option>
-                <option value="ollama">Ollama</option>
-            </select>
-            <label for="l2-model">L2 Model</label>
-            <select id="l2-model">
-                <option value="gemini-pro">Gemini-Pro</option>
-                <option value="gpt-4o">GPT-4o</option>
-                <option value="ollama">Ollama</option>
-            </select>
-        </div>
-    </div>
-    
     <div id="input-wrapper">
         <div id="copilot-input-box">
             <textarea id="prompt-input" placeholder="Ask Omrix something..." rows="1"></textarea>
@@ -41,14 +20,7 @@
             <div id="input-toolbar">
                 <div class="toolbar-left">
                     <button class="icon-button" title="Attach context (future)">+</button>
-                    <select class="toolbar-select" title="Mode (future)">
-                        <option value="chat">Chat</option>
-                    </select>
-                    <select id="model-selector" class="toolbar-select" title="Model">
-                        <option value="gemini">Gemini</option>
-                        <option value="grok">Grok</option>
-                        <option value="ollama">Ollama</option>
-                    </select>
+                    <button class="icon-button settings-button" title="Settings">⚙️</button>
                 </div>
                 <div class="toolbar-right">
                     <button id="send-button" class="icon-button send-button" title="Send message">
@@ -57,6 +29,65 @@
                         </svg>
                     </button>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Settings Modal -->
+    <div id="settings-modal" class="modal hidden">
+        <div class="modal-overlay"></div>
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Lattice Settings</h2>
+                <button class="modal-close-btn">&times;</button>
+            </div>
+            <div class="modal-body">
+                <!-- Gemini API Key -->
+                <div class="settings-group">
+                    <label for="gemini-api-input">Gemini API Key</label>
+                    <input type="password" id="gemini-api-input" placeholder="Enter your Gemini API key" />
+                </div>
+
+                <!-- Groq API Key -->
+                <div class="settings-group">
+                    <label for="groq-api-input">Groq API Key</label>
+                    <input type="password" id="groq-api-input" placeholder="Enter your Groq API key" />
+                </div>
+
+                <!-- Ollama URL -->
+                <div class="settings-group">
+                    <label for="ollama-url-input">Ollama URL</label>
+                    <input type="text" id="ollama-url-input" placeholder="http://localhost:11434" />
+                    <button id="fetch-ollama-models-btn" class="fetch-btn">Fetch Models</button>
+                </div>
+
+                <!-- Ollama Models (dynamic list) -->
+                <div class="settings-group">
+                    <label for="ollama-models-list">Available Ollama Models</label>
+                    <select id="ollama-models-list" size="4">
+                        <option disabled>Loading... or enter Ollama URL above</option>
+                    </select>
+                </div>
+
+                <!-- L1 Model Selection -->
+                <div class="settings-group">
+                    <label for="l1-model-select">L1 (Router) Model</label>
+                    <select id="l1-model-select">
+                        <option value="" disabled selected>Select a model...</option>
+                    </select>
+                </div>
+
+                <!-- L2 Model Selection -->
+                <div class="settings-group">
+                    <label for="l2-model-select">L2 (Critic) Model</label>
+                    <select id="l2-model-select">
+                        <option value="" disabled selected>Select a model...</option>
+                    </select>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button id="settings-save-btn" class="btn btn-primary">Save & Close</button>
+                <button id="settings-cancel-btn" class="btn btn-secondary">Cancel</button>
             </div>
         </div>
     </div>
