@@ -46,7 +46,19 @@ export class OllamaClient implements IAIProvider {
             }))
         };
 
-        const response = await fetch(url, {
+        // Resolve a fetch implementation at runtime. Prefer globalThis.fetch (Node 18+/browsers),
+        // otherwise try to dynamically import 'node-fetch'. Provide a clear error if unavailable.
+        let fetchImpl: any = (globalThis as any).fetch;
+        if (!fetchImpl) {
+            try {
+                const nodeFetch = await import('node-fetch');
+                fetchImpl = nodeFetch.default || nodeFetch;
+            } catch (e) {
+                throw new Error('fetch is not available in this environment. Install "node-fetch" or run on Node 18+.');
+            }
+        }
+
+        const response = await fetchImpl(url, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
