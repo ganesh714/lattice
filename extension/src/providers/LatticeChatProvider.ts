@@ -199,10 +199,10 @@ export class LatticeChatProvider implements vscode.WebviewViewProvider, IAgentUI
     }
 
     private _getHtmlForWebview(webview: vscode.Webview) {
-        const webviewPath = path.join(this._extensionUri.fsPath, 'src', 'webview');
-        const htmlPath = path.join(webviewPath, 'index.html');
-        const cssPath = path.join(webviewPath, 'style.css');
-        const scriptPathOnDisk = vscode.Uri.file(path.join(webviewPath, 'main.js'));
+        const webviewPath = vscode.Uri.joinPath(this._extensionUri, 'src', 'webview');
+        const htmlPath = path.join(webviewPath.fsPath, 'index.html');
+        const cssPath = path.join(webviewPath.fsPath, 'style.css');
+        const scriptPathOnDisk = vscode.Uri.joinPath(webviewPath, 'main.js');
 
         let htmlContent = fs.readFileSync(htmlPath, 'utf8');
         const cssContent = fs.readFileSync(cssPath, 'utf8');
@@ -212,6 +212,7 @@ export class LatticeChatProvider implements vscode.WebviewViewProvider, IAgentUI
         htmlContent = htmlContent.replace('{{inlineStyles}}', cssContent);
         htmlContent = htmlContent.replace(/{{scriptUri}}/g, scriptUri.toString());
         htmlContent = htmlContent.replace(/{{nonce}}/g, nonce);
+        htmlContent = htmlContent.replace(/{{cspSource}}/g, webview.cspSource);
 
         return htmlContent;
     }
