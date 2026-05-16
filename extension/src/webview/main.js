@@ -13,7 +13,6 @@
         const chatHistory = document.getElementById('chat-history');
         const promptInput = document.getElementById('prompt-input');
         const sendButton = document.getElementById('send-button');
-        const testButton = document.getElementById('test-button');
         const attachButton = document.getElementById('attach-button');
         
         // Modal & Settings elements
@@ -25,7 +24,6 @@
         console.log('[Lattice Debug] Elements found:', {
             settingsButton: !!settingsButton,
             attachButton: !!attachButton,
-            testButton: !!testButton,
             settingsModal: !!settingsModal,
             modalCloseBtn: !!modalCloseBtn,
             chatHistory: !!chatHistory,
@@ -335,7 +333,6 @@
     let listeners = {
         settings: false,
         attach: false,
-        test: false,
         send: false
     };
 
@@ -530,15 +527,6 @@
         console.error('[Lattice Debug] Cannot attach listener to attachButton - element is null!');
     }
 
-    // TEST BUTTON - This verifies the script is loading
-    if (testButton) {
-        console.log('[Lattice Debug] Attaching click listener to test button');
-        testButton.addEventListener('click', () => {
-            console.log('[Lattice Debug] TEST BUTTON CLICKED - Script is working!');
-            alert('TEST: JavaScript is running! Click OK to close this alert.');
-        });
-        listeners.test = true;
-    }
     
     if (modalCloseBtn) {
         modalCloseBtn.addEventListener('click', closeModal);
