@@ -3,9 +3,15 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-{{nonce}}' https://cdn.jsdelivr.net;">
-    <style>{{inlineStyles}}</style>
-    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src {{cspSource}} 'unsafe-inline'; script-src 'nonce-{{nonce}}' {{cspSource}} https://cdn.jsdelivr.net; connect-src *; img-src *; font-src *;">
+    <style nonce="{{nonce}}">{{inlineStyles}}</style>
+    <script nonce="{{nonce}}">
+        console.log('[Lattice Debug] HTML Script Executing');
+        window.addEventListener('DOMContentLoaded', () => {
+            console.log('[Lattice Debug] DOMContentLoaded');
+        });
+    </script>
+    <script nonce="{{nonce}}" src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <title>Omrix Chat</title>
 </head>
 <body>
@@ -21,6 +27,7 @@
                 <div class="toolbar-left">
                     <button class="icon-button" title="Attach context (future)">+</button>
                     <button class="icon-button settings-button" title="Settings">⚙️</button>
+                    <button id="test-button" class="icon-button" title="Test Button" style="background: orange; color: white;">🧪</button>
                 </div>
                 <div class="toolbar-right">
                     <button id="send-button" class="icon-button send-button" title="Send message">
