@@ -209,6 +209,10 @@ export class LatticeChatProvider implements vscode.WebviewViewProvider, IAgentUI
         const scriptUri = webview.asWebviewUri(scriptPathOnDisk);
         const nonce = this.getNonce();
 
+        console.log('[Lattice Provider Debug] Script URI:', scriptUri.toString());
+        console.log('[Lattice Provider Debug] Nonce:', nonce);
+        console.log('[Lattice Provider Debug] CSP Source:', webview.cspSource);
+
         htmlContent = htmlContent.replace('{{inlineStyles}}', cssContent);
         htmlContent = htmlContent.replace(/{{scriptUri}}/g, scriptUri.toString());
         htmlContent = htmlContent.replace(/{{nonce}}/g, nonce);
