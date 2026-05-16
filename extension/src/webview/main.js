@@ -1,30 +1,42 @@
 (function() {
     console.log('[Lattice Debug] main.js loading...');
     
+    // Ensure `vscode` is available to the whole script without throwing
+    let vscode = null;
     try {
-        const vscode = acquireVsCodeApi();
+        vscode = acquireVsCodeApi();
+    } catch (e) {
+        console.warn('[Lattice Debug] acquireVsCodeApi() failed:', e.message);
+    }
+    
+    try {
         const chatHistory = document.getElementById('chat-history');
         const promptInput = document.getElementById('prompt-input');
         const sendButton = document.getElementById('send-button');
         const testButton = document.getElementById('test-button');
+        const attachButton = document.getElementById('attach-button');
         
         // Modal & Settings elements
         const settingsModal = document.getElementById('settings-modal');
-        const settingsButton = document.querySelector('.settings-button');
+        const settingsButton = document.getElementById('settings-button');
         const modalCloseBtn = document.querySelector('.modal-close-btn');
         
         // Defensive checks
         console.log('[Lattice Debug] Elements found:', {
             settingsButton: !!settingsButton,
+            attachButton: !!attachButton,
+            testButton: !!testButton,
             settingsModal: !!settingsModal,
             modalCloseBtn: !!modalCloseBtn,
             chatHistory: !!chatHistory,
-            sendButton: !!sendButton,
-            testButton: !!testButton
+            sendButton: !!sendButton
         });
         
         if (!settingsButton) {
             console.error('[Lattice Debug] settings-button NOT found! Available buttons:', document.querySelectorAll('button'));
+        }
+        if (!attachButton) {
+            console.warn('[Lattice Debug] attach-button NOT found!');
         }
         if (!settingsModal) {
             console.error('[Lattice Debug] settings-modal NOT found!');
@@ -116,7 +128,7 @@
                 }
                 chatHistory.scrollTop = chatHistory.scrollHeight;
                 break;
-            case 'statusUpdate':
+            case 'statusUpdate': {
                 // Update subtext on the active loading indicator if present
                 const loader = document.getElementById('loading-indicator');
                 if (loader) {
@@ -132,10 +144,12 @@
                     sub.textContent = message.value;
                 }
                 break;
-            case 'removeLoading':
+            }
+            case 'removeLoading': {
                 const loader = document.getElementById('loading-indicator');
                 if (loader) loader.remove();
                 break;
+            }
             case 'generationFinished':
                 setGeneratingState(false);
                 break;
@@ -248,7 +262,11 @@
             resolved.textContent = accepted ? '✅ Edit accepted' : '❌ Edit rejected';
             block.appendChild(resolved);
 
-            vscode.postMessage({ type: accepted ? 'approveEdit' : 'rejectEdit', id });
+            if (vscode) {
+                vscode.postMessage({ type: accepted ? 'approveEdit' : 'rejectEdit', id });
+            } else {
+                console.warn('[Lattice Debug] Cannot post approve/reject - vscode API missing');
+            }
         };
 
         acceptBtn.addEventListener('click', () => resolveBlock(true));
@@ -284,7 +302,11 @@
 
     function handleSendOrStop() {
         if (isGenerating) {
-            vscode.postMessage({ type: 'abortGeneration' });
+            if (vscode) {
+                vscode.postMessage({ type: 'abortGeneration' });
+            } else {
+                console.warn('[Lattice Debug] abortGeneration requested but vscode API missing');
+            }
             setGeneratingState(false);
         } else {
             sendPrompt();
@@ -300,16 +322,28 @@
         promptInput.style.height = 'auto';
         
         // Send the message to the extension
-        vscode.postMessage({
-            type: 'prompt',
-            text: text
-        });
+        if (vscode) {
+            vscode.postMessage({ type: 'prompt', text: text });
+        } else {
+            console.warn('[Lattice Debug] prompt requested but vscode API missing');
+            // Fallback: show message locally
+            appendMessage(text, true, false, false);
+        }
     }
+
+    // Listener attachment flags for debug panel
+    let listeners = {
+        settings: false,
+        attach: false,
+        test: false,
+        send: false
+    };
 
     // Send button listener
     if (sendButton) {
         console.log('[Lattice Debug] Attaching click listener to send button');
         sendButton.addEventListener('click', handleSendOrStop);
+        listeners.send = true;
     } else {
         console.error('[Lattice Debug] sendButton not found!');
     }
@@ -345,10 +379,10 @@
     chatHistory.appendChild(debugIndicator);
 
     try {
-        if (typeof vscode === 'undefined') {
-            console.error('[Lattice Debug] vscode API is NOT defined!');
-            debugIndicator.textContent = 'Lattice JS Error: vscode API missing';
-            debugIndicator.style.color = 'red';
+        if (!vscode) {
+            console.error('[Lattice Debug] vscode API is NOT available!');
+            debugIndicator.textContent = 'Lattice JS Warning: vscode API missing';
+            debugIndicator.style.color = 'orange';
         } else {
             // Load persisted settings from extension
             const saved = vscode.getState() || {};
@@ -445,8 +479,12 @@
             l2Model: l2ModelSelect.value,
             availableModels
         };
-        vscode.setState(settings);
-        vscode.postMessage({ type: 'updateSettings', settings });
+        if (vscode) {
+            vscode.setState(settings);
+            vscode.postMessage({ type: 'updateSettings', settings });
+        } else {
+            console.warn('[Lattice Debug] saveSettings called but vscode API missing - skipping persist');
+        }
     }
 
     // Modal handlers
@@ -471,13 +509,27 @@
     }
 
     // Attach event listeners with error checking
+
     if (settingsButton) {
         console.log('[Lattice Debug] Attaching click listener to settings button');
         settingsButton.addEventListener('click', openModal);
+        listeners.settings = true;
     } else {
         console.error('[Lattice Debug] Cannot attach listener to settingsButton - element is null!');
     }
-    
+
+    // Attach event listener to + (attach) button - placeholder behavior for now
+    if (attachButton) {
+        console.log('[Lattice Debug] Attaching click listener to attach button');
+        attachButton.addEventListener('click', () => {
+            console.log('[Lattice Debug] ATTACH BUTTON CLICKED');
+            alert('Attach feature coming soon...');
+        });
+        listeners.attach = true;
+    } else {
+        console.error('[Lattice Debug] Cannot attach listener to attachButton - element is null!');
+    }
+
     // TEST BUTTON - This verifies the script is loading
     if (testButton) {
         console.log('[Lattice Debug] Attaching click listener to test button');
@@ -485,6 +537,7 @@
             console.log('[Lattice Debug] TEST BUTTON CLICKED - Script is working!');
             alert('TEST: JavaScript is running! Click OK to close this alert.');
         });
+        listeners.test = true;
     }
     
     if (modalCloseBtn) {
@@ -513,7 +566,6 @@
     if (modalOverlay) {
         modalOverlay.addEventListener('click', closeModal);
     }
-
     promptInput.focus();
     console.log('[Lattice Debug] main.js initialization complete');
     } catch (error) {
