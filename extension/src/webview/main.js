@@ -1,22 +1,44 @@
 (function() {
-    const vscode = acquireVsCodeApi();
-    const chatHistory = document.getElementById('chat-history');
-    const promptInput = document.getElementById('prompt-input');
-    const sendButton = document.getElementById('send-button');
+    console.log('[Lattice Debug] main.js loading...');
     
-    // Modal & Settings elements
-    const settingsModal = document.getElementById('settings-modal');
-    const settingsButton = document.querySelector('.settings-button');
-    const modalCloseBtn = document.querySelector('.modal-close-btn');
-    const settingsSaveBtn = document.getElementById('settings-save-btn');
-    const settingsCancelBtn = document.getElementById('settings-cancel-btn');
-    const geminiApiInput = document.getElementById('gemini-api-input');
-    const groqApiInput = document.getElementById('groq-api-input');
-    const ollamaUrlInput = document.getElementById('ollama-url-input');
-    const fetchOllamaModelsBtn = document.getElementById('fetch-ollama-models-btn');
-    const ollamaModelsList = document.getElementById('ollama-models-list');
-    const l1ModelSelect = document.getElementById('l1-model-select');
-    const l2ModelSelect = document.getElementById('l2-model-select');
+    try {
+        const vscode = acquireVsCodeApi();
+        const chatHistory = document.getElementById('chat-history');
+        const promptInput = document.getElementById('prompt-input');
+        const sendButton = document.getElementById('send-button');
+        const testButton = document.getElementById('test-button');
+        
+        // Modal & Settings elements
+        const settingsModal = document.getElementById('settings-modal');
+        const settingsButton = document.querySelector('.settings-button');
+        const modalCloseBtn = document.querySelector('.modal-close-btn');
+        
+        // Defensive checks
+        console.log('[Lattice Debug] Elements found:', {
+            settingsButton: !!settingsButton,
+            settingsModal: !!settingsModal,
+            modalCloseBtn: !!modalCloseBtn,
+            chatHistory: !!chatHistory,
+            sendButton: !!sendButton,
+            testButton: !!testButton
+        });
+        
+        if (!settingsButton) {
+            console.error('[Lattice Debug] settings-button NOT found! Available buttons:', document.querySelectorAll('button'));
+        }
+        if (!settingsModal) {
+            console.error('[Lattice Debug] settings-modal NOT found!');
+        }
+        
+        const settingsSaveBtn = document.getElementById('settings-save-btn');
+        const settingsCancelBtn = document.getElementById('settings-cancel-btn');
+        const geminiApiInput = document.getElementById('gemini-api-input');
+        const groqApiInput = document.getElementById('groq-api-input');
+        const ollamaUrlInput = document.getElementById('ollama-url-input');
+        const fetchOllamaModelsBtn = document.getElementById('fetch-ollama-models-btn');
+        const ollamaModelsList = document.getElementById('ollama-models-list');
+        const l1ModelSelect = document.getElementById('l1-model-select');
+        const l2ModelSelect = document.getElementById('l2-model-select');
 
     let currentBotContainer = null;
     let currentStepsDetails = null;
@@ -284,38 +306,88 @@
         });
     }
 
-    sendButton.addEventListener('click', handleSendOrStop);
-    // Send on Enter (Shift+Enter for newline)
-    promptInput.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' && !e.shiftKey) {
-            e.preventDefault();
-            if (!isGenerating) sendPrompt();
-        }
-    });
+    // Send button listener
+    if (sendButton) {
+        console.log('[Lattice Debug] Attaching click listener to send button');
+        sendButton.addEventListener('click', handleSendOrStop);
+    } else {
+        console.error('[Lattice Debug] sendButton not found!');
+    }
     
-    // Auto resize text area
-    promptInput.addEventListener('input', function() {
-        this.style.height = 'auto';
-        this.style.height = (this.scrollHeight) + 'px';
-    });
+    // Send on Enter (Shift+Enter for newline)
+    if (promptInput) {
+        promptInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                if (!isGenerating) sendPrompt();
+            }
+        });
+        
+        // Auto resize text area
+        promptInput.addEventListener('input', function() {
+            this.style.height = 'auto';
+            this.style.height = (this.scrollHeight) + 'px';
+        });
 
-    promptInput.focus();
+        promptInput.focus();
+    }
 
-    // Load persisted settings from extension
-    const saved = vscode.getState() || {};
-    if (saved.geminiApi) geminiApiInput.value = saved.geminiApi;
-    if (saved.groqApi) groqApiInput.value = saved.groqApi;
-    if (saved.ollamaUrl) ollamaUrlInput.value = saved.ollamaUrl;
-    if (saved.l1Model) l1ModelSelect.value = saved.l1Model;
-    if (saved.l2Model) l2ModelSelect.value = saved.l2Model;
-    if (saved.availableModels) availableModels = saved.availableModels;
+    // --- Initialization & State Persistence ---
+    console.log('[Lattice Debug] Starting initialization...');
+    
+    // Visible debug indicator
+    const debugIndicator = document.createElement('div');
+    debugIndicator.style.fontSize = '10px';
+    debugIndicator.style.color = 'var(--vscode-descriptionForeground)';
+    debugIndicator.style.padding = '4px 8px';
+    debugIndicator.style.opacity = '0.5';
+    debugIndicator.textContent = 'Lattice JS Active';
+    chatHistory.appendChild(debugIndicator);
 
+    try {
+        if (typeof vscode === 'undefined') {
+            console.error('[Lattice Debug] vscode API is NOT defined!');
+            debugIndicator.textContent = 'Lattice JS Error: vscode API missing';
+            debugIndicator.style.color = 'red';
+        } else {
+            // Load persisted settings from extension
+            const saved = vscode.getState() || {};
+            console.log('[Lattice Debug] Saved state:', saved);
+            
+            if (saved.geminiApi) geminiApiInput.value = saved.geminiApi;
+            if (saved.groqApi) groqApiInput.value = saved.groqApi;
+            if (saved.ollamaUrl) ollamaUrlInput.value = saved.ollamaUrl;
+            
+            // Ensure availableModels has the expected structure
+            if (saved.availableModels) {
+                availableModels = {
+                    gemini: saved.availableModels.gemini || [],
+                    groq: saved.availableModels.groq || [],
+                    ollama: saved.availableModels.ollama || []
+                };
+            }
+
+            // Initialize model selectors first so they have options
+            updateModelSelectors();
+
+            // Now set the selected values
+            if (saved.l1Model) l1ModelSelect.value = saved.l1Model;
+            if (saved.l2Model) l2ModelSelect.value = saved.l2Model;
+        }
+    } catch (e) {
+        console.error('[Lattice Debug] Failed during initialization:', e);
+        debugIndicator.textContent = 'Lattice JS Error: ' + e.message;
+    }
+
+    // --- Helper functions for settings ---
     // Update L1/L2 selectors with available models from all providers
     function updateModelSelectors() {
+        if (!l1ModelSelect || !l2ModelSelect) return;
+
         const allModels = [
-            ...availableModels.gemini.map(m => ({ value: `gemini:${m}`, label: `Gemini: ${m}` })),
-            ...availableModels.groq.map(m => ({ value: `groq:${m}`, label: `Groq: ${m}` })),
-            ...availableModels.ollama.map(m => ({ value: `ollama:${m}`, label: `Ollama: ${m}` }))
+            ...(availableModels.gemini || []).map(m => ({ value: `gemini:${m}`, label: `Gemini: ${m}` })),
+            ...(availableModels.groq || []).map(m => ({ value: `groq:${m}`, label: `Groq: ${m}` })),
+            ...(availableModels.ollama || []).map(m => ({ value: `ollama:${m}`, label: `Ollama: ${m}` }))
         ];
         
         [l1ModelSelect, l2ModelSelect].forEach(select => {
@@ -335,7 +407,7 @@
     async function fetchOllamaModels() {
         const url = ollamaUrlInput.value.trim();
         if (!url) {
-            alert('Please enter Ollama URL first');
+            console.error('Please enter Ollama URL first');
             return;
         }
         try {
@@ -359,7 +431,7 @@
             updateModelSelectors();
             saveSettings();
         } catch (e) {
-            alert(`Failed to fetch Ollama models: ${e.message}`);
+            console.error(`Failed to fetch Ollama models: ${e.message}`);
         }
     }
 
@@ -379,26 +451,77 @@
 
     // Modal handlers
     function openModal() {
+        console.log('[Lattice Debug] openModal called');
+        if (!settingsModal) {
+            console.error('[Lattice Debug] settingsModal is null!');
+            return;
+        }
         settingsModal.classList.remove('hidden');
+        console.log('[Lattice Debug] Modal opened');
     }
 
     function closeModal() {
+        console.log('[Lattice Debug] closeModal called');
+        if (!settingsModal) {
+            console.error('[Lattice Debug] settingsModal is null!');
+            return;
+        }
         settingsModal.classList.add('hidden');
+        console.log('[Lattice Debug] Modal closed');
     }
 
-    settingsButton.addEventListener('click', openModal);
-    modalCloseBtn.addEventListener('click', closeModal);
-    settingsCancelBtn.addEventListener('click', closeModal);
-    settingsSaveBtn.addEventListener('click', () => {
-        saveSettings();
-        closeModal();
-    });
+    // Attach event listeners with error checking
+    if (settingsButton) {
+        console.log('[Lattice Debug] Attaching click listener to settings button');
+        settingsButton.addEventListener('click', openModal);
+    } else {
+        console.error('[Lattice Debug] Cannot attach listener to settingsButton - element is null!');
+    }
     
-    fetchOllamaModelsBtn.addEventListener('click', fetchOllamaModels);
+    // TEST BUTTON - This verifies the script is loading
+    if (testButton) {
+        console.log('[Lattice Debug] Attaching click listener to test button');
+        testButton.addEventListener('click', () => {
+            console.log('[Lattice Debug] TEST BUTTON CLICKED - Script is working!');
+            alert('TEST: JavaScript is running! Click OK to close this alert.');
+        });
+    }
+    
+    if (modalCloseBtn) {
+        modalCloseBtn.addEventListener('click', closeModal);
+    } else {
+        console.error('[Lattice Debug] Cannot attach listener to modalCloseBtn - element is null!');
+    }
+    
+    if (settingsCancelBtn) {
+        settingsCancelBtn.addEventListener('click', closeModal);
+    }
+    
+    if (settingsSaveBtn) {
+        settingsSaveBtn.addEventListener('click', () => {
+            saveSettings();
+            closeModal();
+        });
+    }
+    
+    if (fetchOllamaModelsBtn) {
+        fetchOllamaModelsBtn.addEventListener('click', fetchOllamaModels);
+    }
     
     // Close modal on overlay click
-    document.querySelector('.modal-overlay').addEventListener('click', closeModal);
+    const modalOverlay = document.querySelector('.modal-overlay');
+    if (modalOverlay) {
+        modalOverlay.addEventListener('click', closeModal);
+    }
 
-    // Initialize model selectors
-    updateModelSelectors();
+    promptInput.focus();
+    console.log('[Lattice Debug] main.js initialization complete');
+    } catch (error) {
+        console.error('[Lattice Debug] Fatal error in main.js:', error);
+        const errorDiv = document.createElement('div');
+        errorDiv.style.color = 'red';
+        errorDiv.style.padding = '10px';
+        errorDiv.textContent = 'ERROR: ' + error.message;
+        document.body.appendChild(errorDiv);
+    }
 })();
