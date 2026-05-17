@@ -65,22 +65,23 @@ export class AgentExecutor {
             finalResponse = await this.runChatFlow(prompt, model);
         } else {
             // Phase 2: Planning & Critic Loop (L2)
+            const l2Model = settings?.l2Model || model;
             this.ui.setLoading("Architecting plan...");
             this.ui.statusUpdate?.('Architecting plan (L2)...');
-            let plan = await this.generatePlan(prompt, model);
-        this.ui.addStep('📝', 'Planning', 'Drafting implementation steps');
+            let plan = await this.generatePlan(prompt, l2Model);
+            this.ui.addStep('📝', 'Planning', 'Drafting implementation steps');
 
-        this.ui.setLoading("Reviewing plan...");
-        this.ui.statusUpdate?.('Reviewing plan (L2 Critic)...');
-        const review = await Critic.reviewPlan(prompt, plan, this.chatHistory);
-        if (!review.approved) {
-            this.ui.addStep('⚠️', 'Critic Review', 'Correction suggested');
-            this.ui.setLoading("Refining plan...");
-            plan = await this.refinePlan(prompt, plan, review.feedback || '', model);
-            this.ui.addStep('🔄', 'Planning', 'Plan refined based on Critic feedback');
-        } else {
-            this.ui.addStep('✅', 'Critic Review', 'Plan approved by Senior Architect');
-        }
+            this.ui.setLoading("Reviewing plan...");
+            this.ui.statusUpdate?.('Reviewing plan (L2 Critic)...');
+            const review = await Critic.reviewPlan(prompt, plan, this.chatHistory, l2Model);
+            if (!review.approved) {
+                this.ui.addStep('⚠️', 'Critic Review', 'Correction suggested');
+                this.ui.setLoading("Refining plan...");
+                plan = await this.refinePlan(prompt, plan, review.feedback || '', l2Model);
+                this.ui.addStep('🔄', 'Planning', 'Plan refined based on Critic feedback');
+            } else {
+                this.ui.addStep('✅', 'Critic Review', 'Plan approved by Senior Architect');
+            }
 
             // Phase 3 & 4: Surgical Execution & Self-Healing
             finalResponse = await this.runExecutionFlow(prompt, plan, model);
@@ -91,10 +92,11 @@ export class AgentExecutor {
             const TOOL_THRESHOLD = 5;
             const CHAT_THRESHOLD = 10;
             if (this.toolHistory.length > TOOL_THRESHOLD || this.chatHistory.length > CHAT_THRESHOLD) {
+                const l2Model = settings?.l2Model || model;
                 this.ui.setLoading('L2 Critic is compressing session memory...');
                 this.ui.addStep('🗜️', 'Compressing', 'L2 Critic');
 
-                const summary = await Critic.compressSession(this.chatHistory, this.toolHistory);
+                const summary = await Critic.compressSession(this.chatHistory, this.toolHistory, l2Model);
 
                 // Keep the last user message to preserve immediate context
                 const lastUser = [...this.chatHistory].reverse().find(m => m.role === 'user');
