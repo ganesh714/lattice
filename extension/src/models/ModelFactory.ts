@@ -52,18 +52,20 @@ export class ModelFactory {
         const configuredFallbacks = providersToTry.filter(p => this.isProviderConfigured(p));
         const finalProviders = [primaryProvider, ...configuredFallbacks];
 
-        let lastError: any = null;
+        let primaryError: any = null;
         for (const providerType of finalProviders) {
             try {
                 const provider = this.getProvider(providerType);
                 return await provider.generateResponse(request, systemInstruction);
             } catch (error) {
                 console.error(`Provider ${providerType} failed:`, error);
-                lastError = error;
+                if (!primaryError) {
+                    primaryError = error;
+                }
                 continue;
             }
         }
 
-        throw lastError || new Error("All configured AI providers failed to generate a response.");
+        throw primaryError || new Error("All configured AI providers failed to generate a response.");
     }
 }
