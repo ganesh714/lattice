@@ -115,7 +115,19 @@ export class LatticeChatProvider implements vscode.WebviewViewProvider, IAgentUI
         webviewView.webview.html = this._getHtmlForWebview(webviewView.webview);
 
         webviewView.webview.onDidReceiveMessage(async (message) => {
-            if (message.type === 'prompt') {
+            if (message.type === 'ready') {
+                // Load settings from VS Code config and send to Webview
+                const config = vscode.workspace.getConfiguration('lattice');
+                this._settings = {
+                    geminiApi: config.get<string>('apiKeys.gemini') || '',
+                    groqApi: config.get<string>('apiKeys.groq') || '',
+                    ollamaUrl: config.get<string>('local.ollamaEndpoint') || 'http://127.0.0.1:11434',
+                    l1Model: this._settings.l1Model || '',
+                    l2Model: this._settings.l2Model || '',
+                    availableModels: this._settings.availableModels
+                };
+                webviewView.webview.postMessage({ type: 'initSettings', settings: this._settings });
+            } else if (message.type === 'prompt') {
                 // Lazily create a persistent executor for the session
                 const workspacePath = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || '';
                 if (!this._executor) this._executor = new AgentExecutor(this, workspacePath);
@@ -124,6 +136,22 @@ export class LatticeChatProvider implements vscode.WebviewViewProvider, IAgentUI
                 // Store settings from the webview
                 this._settings = message.settings || {};
                 console.log('[Lattice] Settings updated:', this._settings);
+
+                // Write keys to VS Code configuration so they persist and are accessible to ModelFactory and other clients
+                try {
+                    const config = vscode.workspace.getConfiguration('lattice');
+                    if (this._settings.geminiApi !== undefined) {
+                        config.update('apiKeys.gemini', this._settings.geminiApi, vscode.ConfigurationTarget.Global);
+                    }
+                    if (this._settings.groqApi !== undefined) {
+                        config.update('apiKeys.groq', this._settings.groqApi, vscode.ConfigurationTarget.Global);
+                    }
+                    if (this._settings.ollamaUrl !== undefined) {
+                        config.update('local.ollamaEndpoint', this._settings.ollamaUrl, vscode.ConfigurationTarget.Global);
+                    }
+                } catch (e) {
+                    console.error('Failed to update VS Code configuration:', e);
+                }
             } else if (message.type === 'approveEdit' || message.type === 'rejectEdit') {
                 const pending = this._pendingApprovals.get(message.id);
                 if (pending) {
