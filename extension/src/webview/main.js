@@ -76,6 +76,39 @@
     window.addEventListener('message', event => {
         const message = event.data;
         switch (message.type) {
+            case 'initSettings':
+                console.log('[Lattice Debug] Received initSettings:', message.settings);
+                if (message.settings) {
+                    if (message.settings.geminiApi !== undefined) geminiApiInput.value = message.settings.geminiApi;
+                    if (message.settings.groqApi !== undefined) groqApiInput.value = message.settings.groqApi;
+                    if (message.settings.ollamaUrl !== undefined) ollamaUrlInput.value = message.settings.ollamaUrl;
+                    
+                    if (message.settings.availableModels) {
+                        availableModels = {
+                            gemini: message.settings.availableModels.gemini?.length > 0 ? message.settings.availableModels.gemini : KNOWN_MODELS.gemini,
+                            groq: message.settings.availableModels.groq?.length > 0 ? message.settings.availableModels.groq : KNOWN_MODELS.groq,
+                            ollama: message.settings.availableModels.ollama || []
+                        };
+                    }
+                    
+                    updateModelSelectors();
+                    
+                    if (message.settings.l1Model) l1ModelSelect.value = message.settings.l1Model;
+                    if (message.settings.l2Model) l2ModelSelect.value = message.settings.l2Model;
+                    
+                    // Keep the local state in sync
+                    if (vscode) {
+                        vscode.setState({
+                            geminiApi: geminiApiInput.value,
+                            groqApi: groqApiInput.value,
+                            ollamaUrl: ollamaUrlInput.value,
+                            l1Model: l1ModelSelect.value,
+                            l2Model: l2ModelSelect.value,
+                            availableModels
+                        });
+                    }
+                }
+                break;
             case 'askApproval':
                 showDiffApproval(message.id, message.target, message.oldText, message.newText);
                 chatHistory.scrollTop = chatHistory.scrollHeight;
@@ -626,6 +659,9 @@
     }
     promptInput.focus();
     console.log('[Lattice Debug] main.js initialization complete');
+    if (vscode) {
+        vscode.postMessage({ type: 'ready' });
+    }
     } catch (error) {
         console.error('[Lattice Debug] Fatal error in main.js:', error);
         const errorDiv = document.createElement('div');
