@@ -46,6 +46,8 @@
         const groqApiInput = document.getElementById('groq-api-input');
         const ollamaUrlInput = document.getElementById('ollama-url-input');
         const fetchOllamaModelsBtn = document.getElementById('fetch-ollama-models-btn');
+        const fetchGeminiModelsBtn = document.getElementById('fetch-gemini-models-btn');
+        const fetchGroqModelsBtn = document.getElementById('fetch-groq-models-btn');
         const ollamaModelsList = document.getElementById('ollama-models-list');
         const l1ModelSelect = document.getElementById('l1-model-select');
         const l2ModelSelect = document.getElementById('l2-model-select');
@@ -53,7 +55,19 @@
     let currentBotContainer = null;
     let currentStepsDetails = null;
     let isGenerating = false;
-    let availableModels = { gemini: [], groq: [], ollama: [] };
+    
+    // Known models for each provider
+    const KNOWN_MODELS = {
+        gemini: ['gemini-3.1-pro', 'gemini-3.1-flash', 'gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro', 'gemini-1.5-flash', 'gemini-1.0-pro', 'gemini-pro'],
+        groq: ['mixtral-8x7b-32768', 'llama-3.3-70b-versatile', 'llama-3.1-70b-versatile', 'llama-3-70b-8192', 'llama-2-70b-4096'],
+        ollama: []
+    };
+    
+    let availableModels = { 
+        gemini: [...KNOWN_MODELS.gemini], 
+        groq: [...KNOWN_MODELS.groq], 
+        ollama: [] 
+    };
 
     const SEND_ICON = `<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path fill-rule="evenodd" clip-rule="evenodd" d="M8.354 1.146a.5.5 0 0 0-.708 0l-6 6a.5.5 0 0 0 .708.708L7.5 2.707V14.5a.5.5 0 0 0 1 0V2.707l5.146 5.147a.5.5 0 0 0 .708-.708l-6-6z"/></svg>`;
     const STOP_ICON = `<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><rect x="3" y="3" width="10" height="10" rx="1"/></svg>`;
@@ -389,11 +403,11 @@
             if (saved.groqApi) groqApiInput.value = saved.groqApi;
             if (saved.ollamaUrl) ollamaUrlInput.value = saved.ollamaUrl;
             
-            // Ensure availableModels has the expected structure
+            // Merge saved models with defaults (preserving defaults if not saved)
             if (saved.availableModels) {
                 availableModels = {
-                    gemini: saved.availableModels.gemini || [],
-                    groq: saved.availableModels.groq || [],
+                    gemini: saved.availableModels.gemini?.length > 0 ? saved.availableModels.gemini : KNOWN_MODELS.gemini,
+                    groq: saved.availableModels.groq?.length > 0 ? saved.availableModels.groq : KNOWN_MODELS.groq,
                     ollama: saved.availableModels.ollama || []
                 };
             }
@@ -463,6 +477,54 @@
             saveSettings();
         } catch (e) {
             console.error(`Failed to fetch Ollama models: ${e.message}`);
+        }
+    }
+
+    // Fetch Gemini models using Google's API
+    async function fetchGeminiModels() {
+        const apiKey = geminiApiInput.value.trim();
+        if (!apiKey) {
+            console.error('Please enter Gemini API key first');
+            return;
+        }
+        try {
+            const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);
+            const data = await res.json();
+            const models = data.models?.map(m => m.name.replace('models/', '')) || [];
+            availableModels.gemini = models.length > 0 ? models : KNOWN_MODELS.gemini;
+            
+            updateModelSelectors();
+            saveSettings();
+            console.log('Gemini models fetched:', models.length > 0 ? models : 'Using defaults');
+        } catch (e) {
+            console.error(`Failed to fetch Gemini models: ${e.message}`);
+            alert('Failed to fetch Gemini models. Check your API key and internet connection.');
+        }
+    }
+
+    // Fetch Groq models using Groq's API
+    async function fetchGroqModels() {
+        const apiKey = groqApiInput.value.trim();
+        if (!apiKey) {
+            console.error('Please enter Groq API key first');
+            return;
+        }
+        try {
+            const res = await fetch('https://api.groq.com/openai/v1/models', {
+                headers: {
+                    'Authorization': `Bearer ${apiKey}`
+                }
+            });
+            const data = await res.json();
+            const models = data.data?.map(m => m.id) || [];
+            availableModels.groq = models.length > 0 ? models : KNOWN_MODELS.groq;
+            
+            updateModelSelectors();
+            saveSettings();
+            console.log('Groq models fetched:', models.length > 0 ? models : 'Using defaults');
+        } catch (e) {
+            console.error(`Failed to fetch Groq models: ${e.message}`);
+            alert('Failed to fetch Groq models. Check your API key and internet connection.');
         }
     }
 
@@ -547,6 +609,14 @@
     
     if (fetchOllamaModelsBtn) {
         fetchOllamaModelsBtn.addEventListener('click', fetchOllamaModels);
+    }
+    
+    if (fetchGeminiModelsBtn) {
+        fetchGeminiModelsBtn.addEventListener('click', fetchGeminiModels);
+    }
+    
+    if (fetchGroqModelsBtn) {
+        fetchGroqModelsBtn.addEventListener('click', fetchGroqModels);
     }
     
     // Close modal on overlay click
