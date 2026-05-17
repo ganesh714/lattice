@@ -14,8 +14,17 @@ export class GeminiClient implements IAIProvider {
         const { GoogleGenerativeAI } = require("@google/generative-ai");
         const genAI = new GoogleGenerativeAI(this.apiKey);
         
+        let modelName = "gemini-1.5-flash";
+        if (request.model) {
+            if (request.model.startsWith("gemini:")) {
+                modelName = request.model.substring(7);
+            } else if (request.model.includes("gemini") && !request.model.includes(":")) {
+                modelName = request.model;
+            }
+        }
+
         const model = genAI.getGenerativeModel({
-            model: request.model.includes("gemini") ? request.model : "gemini-1.5-flash",
+            model: modelName,
             systemInstruction: systemInstruction,
             tools: [{ functionDeclarations: LATTICE_TOOLS }]
         });
