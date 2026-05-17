@@ -124,7 +124,8 @@ export class AgentExecutor {
             model,
             workspace: this.workspacePath,
             tool_history: [],
-            chat_history: this.chatHistory
+            chat_history: this.chatHistory,
+            disableTools: true
         };
         const response = await ModelFactory.generateWithFallback(request, systemInstruction);
         return response.type === 'message' ? response.content : "Error in chat flow.";
