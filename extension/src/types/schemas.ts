@@ -15,6 +15,7 @@ export interface ChatRequest {
     workspace: string;
     tool_history: ToolResponse[];
     chat_history: ChatMessage[];
+    disableTools?: boolean;
 }
 
 export interface ToolCall {
