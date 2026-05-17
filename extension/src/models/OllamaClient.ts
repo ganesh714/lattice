@@ -36,8 +36,20 @@ export class OllamaClient implements IAIProvider {
             });
         }
 
+        let modelName = "llama3";
+        if (request.model) {
+            if (request.model.startsWith("ollama:")) {
+                modelName = request.model.substring(7);
+            } else if (!request.model.includes(":")) {
+                const lowerModel = request.model.toLowerCase();
+                if (!lowerModel.includes("gemini") && !lowerModel.includes("groq")) {
+                    modelName = request.model;
+                }
+            }
+        }
+
         const payload = {
-            model: request.model || "llama3",
+            model: modelName,
             messages: messages,
             stream: false,
             tools: LATTICE_TOOLS.map(t => ({
