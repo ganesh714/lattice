@@ -61,15 +61,19 @@ export class GroqClient implements IAIProvider {
             }
         }
 
-        const completion = await groq.chat.completions.create({
+        const payload: any = {
             messages: messages,
             model: modelName,
-            tools: LATTICE_TOOLS.map(t => ({
+        };
+        if (!request.disableTools) {
+            payload.tools = LATTICE_TOOLS.map(t => ({
                 type: "function",
                 function: t
-            })),
-            tool_choice: "auto",
-        });
+            }));
+            payload.tool_choice = "auto";
+        }
+
+        const completion = await groq.chat.completions.create(payload);
 
         const responseMessage = completion.choices[0].message;
 
