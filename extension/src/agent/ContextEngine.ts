@@ -44,7 +44,7 @@ export class ContextEngine {
     /**
      * Assembles the "Passive Context" (active viewport, .latticerules, etc.)
      */
-    static async getPassiveContext(): Promise<string> {
+    static async getPassiveContext(includeActiveFileContent: boolean = false): Promise<string> {
         let context = "";
         
         // 1. Project-specific Rules (.latticerules)
@@ -71,6 +71,12 @@ export class ContextEngine {
             if (!selection.isEmpty) {
                 const selectedText = doc.getText(selection);
                 context += `\n[User Selection]:\n${selectedText}\n`;
+            } else if (includeActiveFileContent) {
+                const fullText = doc.getText();
+                const truncatedText = fullText.length > 20000 
+                    ? fullText.substring(0, 20000) + "\n\n[Active file content truncated to save tokens...]"
+                    : fullText;
+                context += `\n[Active File Content]:\n${truncatedText}\n`;
             }
         }
 
