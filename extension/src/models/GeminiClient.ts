@@ -25,11 +25,14 @@ export class GeminiClient implements IAIProvider {
             }
         }
 
-        const model = genAI.getGenerativeModel({
+        const modelOptions: any = {
             model: modelName,
             systemInstruction: systemInstruction,
-            tools: [{ functionDeclarations: LATTICE_TOOLS }]
-        });
+        };
+        if (!request.disableTools) {
+            modelOptions.tools = [{ functionDeclarations: LATTICE_TOOLS }];
+        }
+        const model = genAI.getGenerativeModel(modelOptions);
 
         const contents: any[] = [];
         
