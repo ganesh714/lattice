@@ -33,6 +33,21 @@
           "type": "string",
           "default": "http://127.0.0.1:11434",
           "description": "Ollama Local Endpoint"
+        },
+        "lattice.models.l1Model": {
+          "type": "string",
+          "default": "",
+          "description": "L1 Routing & Execution Model"
+        },
+        "lattice.models.l2Model": {
+          "type": "string",
+          "default": "",
+          "description": "L2 Architect & Critic Model"
+        },
+        "lattice.models.availableModels": {
+          "type": "object",
+          "default": {},
+          "description": "Fetched and available models for each provider"
         }
       }
     },
