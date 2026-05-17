@@ -41,8 +41,8 @@ export class OllamaClient implements IAIProvider {
             if (request.model.startsWith("ollama:")) {
                 modelName = request.model.substring(7);
             } else if (!request.model.includes(":")) {
-                const lowerModel = request.model.toLowerCase();
-                if (!lowerModel.includes("gemini") && !lowerModel.includes("groq")) {
+                const lowerModel = request.model.trim().toLowerCase();
+                if (lowerModel !== "ollama" && !lowerModel.includes("gemini") && !lowerModel.includes("groq")) {
                     modelName = request.model;
                 }
             }
