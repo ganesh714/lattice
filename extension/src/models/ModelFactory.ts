@@ -52,13 +52,23 @@ export class ModelFactory {
         const configuredFallbacks = providersToTry.filter(p => this.isProviderConfigured(p));
         const finalProviders = [primaryProvider, ...configuredFallbacks];
 
+        console.log(`[Lattice ModelFactory] Starting execution flow.`);
+        console.log(`[Lattice ModelFactory] Requested model: "${request.model}"`);
+        console.log(`[Lattice ModelFactory] Resolved provider list to attempt (primary first, then configured fallbacks):`, finalProviders);
+
         let primaryError: any = null;
         for (const providerType of finalProviders) {
             try {
+                console.log(`[Lattice ModelFactory] Attempting provider "${providerType}"...`);
                 const provider = this.getProvider(providerType);
-                return await provider.generateResponse(request, systemInstruction);
-            } catch (error) {
-                console.error(`Provider ${providerType} failed:`, error);
+                const response = await provider.generateResponse(request, systemInstruction);
+                console.log(`[Lattice ModelFactory] Provider "${providerType}" successfully generated a response! Response type: "${response.type}"`);
+                return response;
+            } catch (error: any) {
+                console.error(`[Lattice ModelFactory] Provider "${providerType}" failed! Error details:`, error.message || error);
+                if (error.stack) {
+                    console.error(`[Lattice ModelFactory] Stack trace:`, error.stack);
+                }
                 if (!primaryError) {
                     primaryError = error;
                 }
@@ -66,6 +76,7 @@ export class ModelFactory {
             }
         }
 
+        console.error(`[Lattice ModelFactory] All attempted providers failed.`);
         throw primaryError || new Error("All configured AI providers failed to generate a response.");
     }
 }
