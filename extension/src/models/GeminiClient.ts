@@ -19,7 +19,9 @@ export class GeminiClient implements IAIProvider {
             if (request.model.startsWith("gemini:")) {
                 modelName = request.model.substring(7);
             } else if (request.model.includes("gemini") && !request.model.includes(":")) {
-                modelName = request.model;
+                if (request.model.trim().toLowerCase() !== "gemini") {
+                    modelName = request.model;
+                }
             }
         }
 
