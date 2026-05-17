@@ -118,7 +118,8 @@ export class AgentExecutor {
     }
 
     private async runChatFlow(prompt: string, model: string): Promise<string> {
-        const systemInstruction = `You are Lattice, an expert AI assistant. Answer the user's question clearly and concisely.`;
+        const passiveContext = await ContextEngine.getPassiveContext(true);
+        const systemInstruction = `You are Lattice, an expert AI assistant. Answer the user's question clearly and concisely. ${passiveContext}`;
         const request = {
             prompt,
             model,
@@ -132,7 +133,8 @@ export class AgentExecutor {
     }
 
     private async generatePlan(prompt: string, model: string): Promise<string> {
-        const systemInstruction = "Create a detailed step-by-step plan to implement the user's request. Do not call tools yet. Be specific about which files will be modified.";
+        const passiveContext = await ContextEngine.getPassiveContext(false);
+        const systemInstruction = `Create a detailed step-by-step plan to implement the user's request. Do not call tools yet. Be specific about which files will be modified. ${passiveContext}`;
         const request = { prompt, model, workspace: this.workspacePath, tool_history: [], chat_history: this.chatHistory };
         const response = await ModelFactory.generateWithFallback(request, systemInstruction);
         return response.type === 'message' ? response.content : "Failed to generate plan.";
