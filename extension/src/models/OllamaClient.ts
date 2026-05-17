@@ -48,15 +48,17 @@ export class OllamaClient implements IAIProvider {
             }
         }
 
-        const payload = {
+        const payload: any = {
             model: modelName,
             messages: messages,
-            stream: false,
-            tools: LATTICE_TOOLS.map(t => ({
+            stream: false
+        };
+        if (!request.disableTools) {
+            payload.tools = LATTICE_TOOLS.map(t => ({
                 type: "function",
                 function: t
-            }))
-        };
+            }));
+        }
 
         // Resolve a fetch implementation at runtime. Prefer globalThis.fetch (Node 18+/browsers),
         // otherwise try to dynamically import 'node-fetch'. Provide a clear error if unavailable.
