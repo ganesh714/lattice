@@ -54,8 +54,8 @@ export class GroqClient implements IAIProvider {
             if (request.model.startsWith("groq:")) {
                 modelName = request.model.substring(5);
             } else if (!request.model.includes(":")) {
-                const lowerModel = request.model.toLowerCase();
-                if (lowerModel.includes("groq") || lowerModel.includes("llama") || lowerModel.includes("mixtral") || lowerModel.includes("gemma")) {
+                const lowerModel = request.model.trim().toLowerCase();
+                if (lowerModel !== "groq" && (lowerModel.includes("groq") || lowerModel.includes("llama") || lowerModel.includes("mixtral") || lowerModel.includes("gemma"))) {
                     modelName = request.model;
                 }
             }
