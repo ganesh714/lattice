@@ -25,6 +25,21 @@ export class ModelFactory {
         }
     }
 
+    static isProviderConfigured(providerType: string): boolean {
+        const config = vscode.workspace.getConfiguration('lattice');
+        switch (providerType.toLowerCase()) {
+            case 'gemini':
+                return !!config.get<string>('apiKeys.gemini');
+            case 'groq':
+            case 'grok':
+                return !!config.get<string>('apiKeys.groq');
+            case 'ollama':
+                return !!config.get<string>('local.ollamaEndpoint');
+            default:
+                return false;
+        }
+    }
+
     static async generateWithFallback(request: ChatRequest, systemInstruction: string): Promise<AIResponse> {
         const selectedModel = request.model.toLowerCase();
         let providersToTry = ['gemini', 'groq', 'ollama'];
@@ -32,10 +47,13 @@ export class ModelFactory {
         // Prioritize selected model
         const primaryProvider = providersToTry.find(p => selectedModel.includes(p)) || 'gemini';
         providersToTry = providersToTry.filter(p => p !== primaryProvider);
-        providersToTry.unshift(primaryProvider);
+        
+        // Only include fallback providers if they are configured
+        const configuredFallbacks = providersToTry.filter(p => this.isProviderConfigured(p));
+        const finalProviders = [primaryProvider, ...configuredFallbacks];
 
         let lastError: any = null;
-        for (const providerType of providersToTry) {
+        for (const providerType of finalProviders) {
             try {
                 const provider = this.getProvider(providerType);
                 return await provider.generateResponse(request, systemInstruction);
@@ -46,6 +64,6 @@ export class ModelFactory {
             }
         }
 
-        throw lastError || new Error("All AI providers failed to generate a response.");
+        throw lastError || new Error("All configured AI providers failed to generate a response.");
     }
 }
