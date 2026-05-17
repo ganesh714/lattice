@@ -22,7 +22,8 @@ export class Critic {
             model: model, // Use the provided L2 model or default
             workspace: '',
             tool_history: [],
-            chat_history: history
+            chat_history: history,
+            disableTools: true
         };
 
         try {
@@ -44,7 +45,8 @@ export class Critic {
             model: model,
             workspace: '',
             tool_history: [],
-            chat_history: history
+            chat_history: history,
+            disableTools: true
         };
 
         try {
@@ -70,7 +72,8 @@ export class Critic {
             model: model,
             workspace: '',
             tool_history: tool_history,
-            chat_history: chat_history
+            chat_history: chat_history,
+            disableTools: true
         };
 
         try {
