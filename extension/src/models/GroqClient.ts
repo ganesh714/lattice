@@ -49,9 +49,21 @@ export class GroqClient implements IAIProvider {
             });
         }
 
+        let modelName = "llama-3.3-70b-versatile";
+        if (request.model) {
+            if (request.model.startsWith("groq:")) {
+                modelName = request.model.substring(5);
+            } else if (!request.model.includes(":")) {
+                const lowerModel = request.model.toLowerCase();
+                if (lowerModel.includes("groq") || lowerModel.includes("llama") || lowerModel.includes("mixtral") || lowerModel.includes("gemma")) {
+                    modelName = request.model;
+                }
+            }
+        }
+
         const completion = await groq.chat.completions.create({
             messages: messages,
-            model: request.model.includes("llama") ? request.model : "llama-3.3-70b-versatile",
+            model: modelName,
             tools: LATTICE_TOOLS.map(t => ({
                 type: "function",
                 function: t
