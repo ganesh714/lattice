@@ -122,9 +122,9 @@ export class LatticeChatProvider implements vscode.WebviewViewProvider, IAgentUI
                     geminiApi: config.get<string>('apiKeys.gemini') || '',
                     groqApi: config.get<string>('apiKeys.groq') || '',
                     ollamaUrl: config.get<string>('local.ollamaEndpoint') || 'http://127.0.0.1:11434',
-                    l1Model: this._settings.l1Model || '',
-                    l2Model: this._settings.l2Model || '',
-                    availableModels: this._settings.availableModels
+                    l1Model: config.get<string>('models.l1Model') || '',
+                    l2Model: config.get<string>('models.l2Model') || '',
+                    availableModels: config.get<any>('models.availableModels') || {}
                 };
                 webviewView.webview.postMessage({ type: 'initSettings', settings: this._settings });
             } else if (message.type === 'prompt') {
@@ -148,6 +148,15 @@ export class LatticeChatProvider implements vscode.WebviewViewProvider, IAgentUI
                     }
                     if (this._settings.ollamaUrl !== undefined) {
                         config.update('local.ollamaEndpoint', this._settings.ollamaUrl, vscode.ConfigurationTarget.Global);
+                    }
+                    if (this._settings.l1Model !== undefined) {
+                        config.update('models.l1Model', this._settings.l1Model, vscode.ConfigurationTarget.Global);
+                    }
+                    if (this._settings.l2Model !== undefined) {
+                        config.update('models.l2Model', this._settings.l2Model, vscode.ConfigurationTarget.Global);
+                    }
+                    if (this._settings.availableModels !== undefined) {
+                        config.update('models.availableModels', this._settings.availableModels, vscode.ConfigurationTarget.Global);
                     }
                 } catch (e) {
                     console.error('Failed to update VS Code configuration:', e);
