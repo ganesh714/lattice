@@ -2,6 +2,9 @@ import * as vscode from 'vscode';
 import { ChatRequest } from '../types/schemas';
 
 export class ContextEngine {
+    private static readonly SMALL_FILE_LINE_LIMIT = 100;
+    private static readonly ACTIVE_FILE_CONTEXT_WINDOW = 20;
+
     /**
      * Rough estimation of tokens: ~4 chars per token.
      */
@@ -66,21 +69,46 @@ export class ContextEngine {
             const doc = editor.document;
             const selection = editor.selection;
             const relativePath = vscode.workspace.asRelativePath(doc.uri);
+            const totalLines = doc.lineCount;
             
-            context += `\n[Active File]: ${relativePath}`;
+            context += `\n[Active File]: ${relativePath}\n[Active File Total Lines]: ${totalLines}`;
             if (!selection.isEmpty) {
                 const selectedText = doc.getText(selection);
-                context += `\n[User Selection]:\n${selectedText}\n`;
+                const selectionStart = selection.start.line + 1;
+                const selectionEnd = selection.end.line + 1;
+                context += `\n[User Selection: lines ${selectionStart}-${selectionEnd}]:\n${selectedText}\n`;
+                if (includeActiveFileContent) {
+                    if (totalLines <= this.SMALL_FILE_LINE_LIMIT) {
+                        context += `\n[Active File Content: full file]:\n${this.getDocumentLines(doc, 0, totalLines - 1)}\n`;
+                    } else {
+                        const startLine = Math.max(0, selection.start.line - this.ACTIVE_FILE_CONTEXT_WINDOW);
+                        const endLine = Math.min(totalLines - 1, selection.end.line + this.ACTIVE_FILE_CONTEXT_WINDOW);
+                        context += `\n[Active File Partial Context: lines ${startLine + 1}-${endLine + 1} around selection]:\n${this.getDocumentLines(doc, startLine, endLine)}\n`;
+                        context += `[Active File Notice]: Large file detected. Only the selection and nearby context are included.\n`;
+                    }
+                }
             } else if (includeActiveFileContent) {
-                const fullText = doc.getText();
-                const truncatedText = fullText.length > 20000 
-                    ? fullText.substring(0, 20000) + "\n\n[Active file content truncated to save tokens...]"
-                    : fullText;
-                context += `\n[Active File Content]:\n${truncatedText}\n`;
+                if (totalLines <= this.SMALL_FILE_LINE_LIMIT) {
+                    context += `\n[Active File Content: full file]:\n${this.getDocumentLines(doc, 0, totalLines - 1)}\n`;
+                } else {
+                    const cursorLine = selection.active.line;
+                    const startLine = Math.max(0, cursorLine - this.ACTIVE_FILE_CONTEXT_WINDOW);
+                    const endLine = Math.min(totalLines - 1, cursorLine + this.ACTIVE_FILE_CONTEXT_WINDOW);
+                    context += `\n[Active File Partial Context: lines ${startLine + 1}-${endLine + 1} around cursor line ${cursorLine + 1}]:\n${this.getDocumentLines(doc, startLine, endLine)}\n`;
+                    context += `[Active File Notice]: Large file detected. Only partial active-file context is included.\n`;
+                }
             }
         }
 
         const workspacePath = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || 'Unknown';
         return `Current Workspace: ${workspacePath}${context}\n\nGeneral Instruction: Please follow SOLID principles and maintain consistent indentation.`;
+    }
+
+    private static getDocumentLines(doc: vscode.TextDocument, startLine: number, endLine: number): string {
+        const lines: string[] = [];
+        for (let line = startLine; line <= endLine; line++) {
+            lines.push(`${line + 1}: ${doc.lineAt(line).text}`);
+        }
+        return lines.join('\n');
     }
 }
