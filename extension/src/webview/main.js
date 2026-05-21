@@ -113,6 +113,10 @@
                 showDiffApproval(message.id, message.target, message.oldText, message.newText);
                 chatHistory.scrollTop = chatHistory.scrollHeight;
                 break;
+            case 'request_plan_approval':
+                showPlanApproval(message.id, message.plan);
+                chatHistory.scrollTop = chatHistory.scrollHeight;
+                break;
             case 'startBotMessage':
                 currentBotContainer = document.createElement('div');
                 currentBotContainer.className = 'message bot-message';
@@ -318,6 +322,58 @@
         rejectBtn.addEventListener('click', () => resolveBlock(false));
 
         actions.appendChild(acceptBtn);
+        actions.appendChild(rejectBtn);
+        block.appendChild(actions);
+
+        chatHistory.appendChild(block);
+    }
+
+    function showPlanApproval(id, plan) {
+        const block = document.createElement('div');
+        block.className = 'plan-approval-block';
+        block.dataset.id = id;
+
+        const label = document.createElement('div');
+        label.className = 'plan-approval-label';
+        label.textContent = 'Lane 3 plan approval required';
+        block.appendChild(label);
+
+        const body = document.createElement('div');
+        body.className = 'plan-approval-body';
+        body.innerHTML = marked.parse(plan || 'No plan was generated.');
+        block.appendChild(body);
+
+        const actions = document.createElement('div');
+        actions.className = 'plan-approval-actions';
+
+        const approveBtn = document.createElement('button');
+        approveBtn.className = 'plan-btn plan-btn-approve';
+        approveBtn.textContent = 'Approve Plan';
+
+        const rejectBtn = document.createElement('button');
+        rejectBtn.className = 'plan-btn plan-btn-reject';
+        rejectBtn.textContent = 'Reject & Modify';
+
+        const resolveBlock = (approved) => {
+            approveBtn.disabled = true;
+            rejectBtn.disabled = true;
+            actions.innerHTML = '';
+            const resolved = document.createElement('div');
+            resolved.className = 'plan-resolved-label';
+            resolved.textContent = approved ? 'Plan approved. Execution will begin.' : 'Plan rejected. Send revised instructions to modify it.';
+            block.appendChild(resolved);
+
+            if (vscode) {
+                vscode.postMessage({ type: approved ? 'approvePlan' : 'rejectPlan', id });
+            } else {
+                console.warn('[Lattice Debug] Cannot post plan approval - vscode API missing');
+            }
+        };
+
+        approveBtn.addEventListener('click', () => resolveBlock(true));
+        rejectBtn.addEventListener('click', () => resolveBlock(false));
+
+        actions.appendChild(approveBtn);
         actions.appendChild(rejectBtn);
         block.appendChild(actions);
 
