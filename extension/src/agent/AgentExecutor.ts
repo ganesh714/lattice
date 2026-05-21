@@ -10,11 +10,14 @@ import { Router } from './Router';
 import { Critic } from './Critic';
 import { PromptSanitizer } from '../tools/Security';
 
+type ExecutionIntent = 'chat' | 'code_edit' | 'LANE_3';
+
 export interface IAgentUI {
     addStep(icon: string, action: string, target: string): void;
     setLoading(text: string): void;
     removeLoading(): void;
     askApproval(target: string, oldText: string, newText: string): Promise<boolean>;
+    askPlanApproval(plan: string): Promise<boolean>;
     statusUpdate?(text: string): void;
 }
 
@@ -48,39 +51,37 @@ export class AgentExecutor {
         // Phase 1: Security pre-check and Intent Routing (L0)
         this.ui.setLoading("Running security checks...");
         const sanitize = PromptSanitizer.check(prompt);
+        let intent: ExecutionIntent;
         if (sanitize.blocked) {
-            this.ui.removeLoading();
-            this.ui.addStep('⛔', 'Blocked', sanitize.matches.join(', '));
-            return `Security blocked: prompt matched forbidden patterns: ${sanitize.matches.join(', ')}`;
+            intent = 'LANE_3';
+            this.ui.addStep('⚠️', 'Risk Check', `Lane 3: ${sanitize.matches.join(', ')}`);
+            this.ui.statusUpdate?.('Dangerous prompt detected; routing to Lane 3...');
+        } else {
+            this.ui.setLoading("Classifying intent...");
+            this.ui.statusUpdate?.('Routing intent (L0)...');
+            intent = await Router.classify(prompt, this.chatHistory);
+            this.ui.addStep('🧠', 'Routing', intent === 'code_edit' ? 'Work Path (Code Edit)' : 'Chat Path');
         }
-
-        this.ui.setLoading("Classifying intent...");
-        this.ui.statusUpdate?.('Routing intent (L0)...');
-        const intent = await Router.classify(prompt, this.chatHistory);
-        this.ui.addStep('🧠', 'Routing', intent === 'code_edit' ? 'Work Path (Code Edit)' : 'Chat Path');
 
         let finalResponse: string = '';
 
         if (intent === 'chat') {
             finalResponse = await this.runChatFlow(prompt, model);
         } else {
-            // Phase 2: Planning & Critic Loop (L2)
+            // Phase 2: Planning & Critic Loop
             const l2Model = settings?.l2Model || model;
-            this.ui.setLoading("Architecting plan...");
-            this.ui.statusUpdate?.('Architecting plan (L2)...');
-            let plan = await this.generatePlan(prompt, l2Model);
-            this.ui.addStep('📝', 'Planning', 'Drafting implementation steps');
+            const planModel = intent === 'LANE_3' ? model : l2Model;
+            const plan = await this.createReviewedPlan(prompt, planModel, l2Model);
 
-            this.ui.setLoading("Reviewing plan...");
-            this.ui.statusUpdate?.('Reviewing plan (L2 Critic)...');
-            const review = await Critic.reviewPlan(prompt, plan, this.chatHistory, l2Model);
-            if (!review.approved) {
-                this.ui.addStep('⚠️', 'Critic Review', 'Correction suggested');
-                this.ui.setLoading("Refining plan...");
-                plan = await this.refinePlan(prompt, plan, review.feedback || '', l2Model);
-                this.ui.addStep('🔄', 'Planning', 'Plan refined based on Critic feedback');
-            } else {
-                this.ui.addStep('✅', 'Critic Review', 'Plan approved by Senior Architect');
+            if (intent === 'LANE_3') {
+                this.ui.removeLoading();
+                this.ui.addStep('⏸️', 'Approval', 'Waiting for plan approval');
+                const approved = await this.ui.askPlanApproval(plan);
+                if (!approved) {
+                    this.ui.addStep('❌', 'Approval', 'Plan rejected');
+                    return "Plan rejected. Modify the request or send revised instructions, and I will draft a safer plan.";
+                }
+                this.ui.addStep('✅', 'Approval', 'Plan approved');
             }
 
             // Phase 3 & 4: Surgical Execution & Self-Healing
@@ -119,7 +120,12 @@ export class AgentExecutor {
 
     private async runChatFlow(prompt: string, model: string): Promise<string> {
         const passiveContext = await ContextEngine.getPassiveContext(true);
-        const systemInstruction = `You are Lattice, an expert AI assistant. Answer the user's question clearly and concisely. ${passiveContext}`;
+        const rerouteMarker = '[LATTICE_REROUTE: LANE_2]';
+        const systemInstruction = `You are Lattice, an expert AI assistant. Answer the user's question clearly and concisely.
+
+Hard rule: You are in a Chat-Only interface with no tools. If the user explicitly asks you to read, edit, search, or run terminal commands, you must respond with EXACTLY this string and nothing else: ${rerouteMarker}
+
+${passiveContext}`;
         const request = {
             prompt,
             model,
@@ -129,7 +135,16 @@ export class AgentExecutor {
             disableTools: true
         };
         const response = await ModelFactory.generateWithFallback(request, systemInstruction);
-        return response.type === 'message' ? response.content : "Error in chat flow.";
+        if (response.type !== 'message') {
+            return "Error in chat flow.";
+        }
+
+        if (response.content.includes(rerouteMarker)) {
+            this.ui.addStep('🔀', 'Rerouting', 'Lane 2 tool execution');
+            return await this.runExecutionFlow(prompt, prompt, model);
+        }
+
+        return response.content;
     }
 
     private async generatePlan(prompt: string, model: string): Promise<string> {
@@ -138,6 +153,34 @@ export class AgentExecutor {
         const request = { prompt, model, workspace: this.workspacePath, tool_history: [], chat_history: this.chatHistory };
         const response = await ModelFactory.generateWithFallback(request, systemInstruction);
         return response.type === 'message' ? response.content : "Failed to generate plan.";
+    }
+
+    private async createReviewedPlan(prompt: string, planModel: string, criticModel: string): Promise<string> {
+        this.ui.setLoading("Architecting plan...");
+        this.ui.statusUpdate?.('Architecting plan...');
+        let plan = await this.generatePlan(prompt, planModel);
+        this.ui.addStep('📝', 'Planning', 'Drafting implementation steps');
+
+        this.ui.setLoading("Reviewing plan...");
+        this.ui.statusUpdate?.('Reviewing plan (L2 Critic)...');
+        const review = await Critic.reviewPlan(prompt, plan, this.chatHistory, criticModel);
+        if (!review.approved) {
+            this.ui.addStep('⚠️', 'Critic Review', 'Correction suggested');
+            this.ui.setLoading("Refining plan...");
+            plan = await this.refinePlan(prompt, plan, review.feedback || '', planModel);
+            this.ui.addStep('🔄', 'Planning', 'Plan refined based on Critic feedback');
+            this.ui.setLoading("Rechecking refined plan...");
+            const refinedReview = await Critic.reviewPlan(prompt, plan, this.chatHistory, criticModel);
+            if (!refinedReview.approved) {
+                this.ui.addStep('⛔', 'Critic Review', 'Plan not approved');
+                throw new Error(`L2 Critic could not approve the plan: ${refinedReview.feedback || 'No feedback provided.'}`);
+            }
+            this.ui.addStep('✅', 'Critic Review', 'Refined plan approved by Senior Architect');
+        } else {
+            this.ui.addStep('✅', 'Critic Review', 'Plan approved by Senior Architect');
+        }
+
+        return plan;
     }
 
     private async refinePlan(prompt: string, oldPlan: string, feedback: string, model: string): Promise<string> {
@@ -159,8 +202,12 @@ export class AgentExecutor {
             };
 
             request = ContextEngine.pruneContext(request);
-            const passiveContext = await ContextEngine.getPassiveContext();
-            const systemInstruction = `You are Lattice. Execute the implementation plan surgically. ${passiveContext}`;
+            const passiveContext = await ContextEngine.getPassiveContext(true);
+            const systemInstruction = `You are Lattice. Execute the implementation plan surgically.
+
+You only have partial visibility into the user's active file to save memory. If you need to understand the full structure or find specific variables, you MUST use the search_workspace_regex or read_file_chunk tools before attempting an edit.
+
+${passiveContext}`;
 
             this.ui.setLoading("Thinking...");
             const data: AIResponse = await ModelFactory.generateWithFallback(request, systemInstruction);
