@@ -10,6 +10,7 @@ export class LatticeChatProvider implements vscode.WebviewViewProvider, IAgentUI
     private _view?: vscode.WebviewView;
     private _chatHistory: ChatMessage[] = [];
     private _pendingApprovals = new Map<string, { resolve: (approved: boolean) => void }>();
+    private _pendingPlanApprovals = new Map<string, { resolve: (approved: boolean) => void }>();
     private _executor?: AgentExecutor;
     private _diffContents = new Map<string, string>();
     private _diffProviderRegistration?: vscode.Disposable;
@@ -98,6 +99,19 @@ export class LatticeChatProvider implements vscode.WebviewViewProvider, IAgentUI
             this._pendingApprovals.set(id, { resolve });
         });
     }
+
+    async askPlanApproval(plan: string): Promise<boolean> {
+        const id = `plan_${Date.now()}`;
+        this._view?.webview.postMessage({
+            type: 'request_plan_approval',
+            id,
+            plan
+        });
+
+        return new Promise<boolean>((resolve) => {
+            this._pendingPlanApprovals.set(id, { resolve });
+        });
+    }
     // -------------------------------
 
     public resolveWebviewView(
@@ -183,6 +197,12 @@ export class LatticeChatProvider implements vscode.WebviewViewProvider, IAgentUI
                             }
                         }
                     }
+                }
+            } else if (message.type === 'approvePlan' || message.type === 'rejectPlan') {
+                const pending = this._pendingPlanApprovals.get(message.id);
+                if (pending) {
+                    pending.resolve(message.type === 'approvePlan');
+                    this._pendingPlanApprovals.delete(message.id);
                 }
             }
         });
