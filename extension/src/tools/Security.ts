@@ -1,5 +1,9 @@
 export class PromptSanitizer {
     private static patterns: { name: string; regex: RegExp }[] = [
+        { name: 'destructive_keyword', regex: /\b(delete|wipe|erase|destroy)\b/i },
+        { name: 'delete_request', regex: /\b(delete|remove|wipe|erase)\b.*\b(all|everything|entire|whole)\b/i },
+        { name: 'rewrite_all', regex: /\brewrite\b.*\b(all|everything|entire|whole)\b/i },
+        { name: 'mass_refactor', regex: /\b(refactor|replace|modify)\b.*\b(all|everything|entire|whole)\b/i },
         { name: 'rm -rf', regex: /rm\s+-rf/i },
         { name: 'sudo', regex: /\bsudo\b/i },
         { name: 'curl_pipe_bash', regex: /curl\s+[^|]+\|\s*bash/i },
