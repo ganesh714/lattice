@@ -39,7 +39,7 @@ export const LATTICE_TOOLS = [
     },
     {
         name: "search_workspace_regex",
-        description: "Performs a regex-based search across the workspace. Faster and cleaner than grep.",
+        description: "Performs a regex-based search across the workspace. Use simple patterns such as 'server', 'url', 'localhost', 'http', or a variable name. Avoid complex escaped URL regexes; use read_file_chunk when the active file path and line range are known.",
         parameters: {
             type: "object",
             properties: {
