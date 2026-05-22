@@ -1,4 +1,4 @@
-export const LATTICE_TOOLS = [
+const CORE_TOOLS = [
     {
         name: "list_directory_tree",
         description: "Returns a clean JSON-like structure of folders and files. Use this to map the project layout.",
@@ -69,3 +69,15 @@ export const LATTICE_TOOLS = [
         }
     }
 ];
+
+export let LATTICE_TOOLS = [...CORE_TOOLS];
+
+export function resetTools() {
+    LATTICE_TOOLS.length = 0;
+    LATTICE_TOOLS.push(...CORE_TOOLS);
+}
+
+export function registerMcpTool(tool: any) {
+    LATTICE_TOOLS.push(tool);
+}
+
