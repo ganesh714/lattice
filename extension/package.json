@@ -48,6 +48,11 @@
           "type": "object",
           "default": {},
           "description": "Fetched and available models for each provider"
+        },
+        "lattice.mcp.servers": {
+          "type": "object",
+          "default": {},
+          "description": "Configured MCP servers (stdin/stdout-based). Similar format to Claude Desktop config."
         }
       }
     },
