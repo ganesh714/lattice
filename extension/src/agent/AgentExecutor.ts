@@ -9,6 +9,7 @@ import { TerminalTools } from '../tools/Terminal';
 import { Router } from './Router';
 import { Critic } from './Critic';
 import { PromptSanitizer } from '../tools/Security';
+import { McpClient } from '../tools/McpClient';
 
 type ExecutionIntent = 'chat' | 'code_edit' | 'LANE_3';
 
@@ -73,8 +74,7 @@ export class AgentExecutor {
         if (intent === 'chat') {
             finalResponse = await this.runChatFlow(prompt, model);
         } else if (needsActiveFileContext) {
-            const plan = this.createActiveFileAnswerPlan(prompt);
-            finalResponse = await this.runExecutionFlow(prompt, plan, model);
+            finalResponse = await this.runActiveFileEvidenceFlow(prompt, model);
         } else {
             // Phase 2: Planning & Critic Loop
             const l2Model = settings?.l2Model || model;
@@ -128,9 +128,14 @@ export class AgentExecutor {
 
     private needsActiveFileContext(prompt: string): boolean {
         const normalized = prompt.toLowerCase();
-        const referencesActiveFile = /\b(this|current|active|opened|open)\s+file\b/.test(normalized) || /\bin\s+this\s+file\b/.test(normalized);
-        const asksForInspection = /\b(what|where|which|show|find|read|explain|summarize|server\s+url|url|endpoint|port|api)\b/.test(normalized);
-        return referencesActiveFile && asksForInspection;
+        const referencesActiveFile =
+            /\b(this|current|active|opened|open)\s+file\b/.test(normalized) ||
+            /\bin\s+this\s+file\b/.test(normalized) ||
+            /\b(this|current|active|opened|open)\s+(html|css|js|ts|tsx|jsx|py|java|go|rs|php|json|yaml|yml|xml|md)\b/.test(normalized);
+        const referencesHere = /\b(here|this|current|above|below)\b/.test(normalized);
+        const asksForInspection = /\b(what|where|which|show|find|read|explain|summarize|server\s+url|url|endpoint|port|api|localhost|host|base\s+url|fetch|axios|variable|function|class|const|let)\b/.test(normalized);
+        const asksCodeFact = /\b(server\s+url|url|endpoint|port|api|localhost|host|base\s+url|fetch|axios|variable|function|class|const|let)\b/.test(normalized);
+        return (referencesActiveFile && asksForInspection) || (referencesHere && asksCodeFact);
     }
 
     private createActiveFileAnswerPlan(prompt: string): string {
@@ -144,7 +149,101 @@ Rules:
 - If the answer is visible there, answer directly.
 - If the answer is not visible there, use read_file_chunk on the active file path from the system prompt to inspect likely sections.
 - If you need to locate a symbol or URL, use simple search_workspace_regex patterns such as "server", "url", "localhost", "http", "endpoint", "port", "fetch", or "axios".
+- search_workspace_regex returns matching file paths, line numbers, and line snippets. If a search result directly answers the question, answer from that result instead of continuing to search.
+- When you have the answer, respond as normal plain text. Do not call tools named print, final, answer, or respond.
 - Do not edit files.`;
+    }
+
+    private async runActiveFileEvidenceFlow(prompt: string, model: string): Promise<string> {
+        const editor = vscode.window.activeTextEditor;
+        if (!editor) {
+            const plan = this.createActiveFileAnswerPlan(prompt);
+            return await this.runExecutionFlow(prompt, plan, model);
+        }
+
+        const activePath = vscode.workspace.asRelativePath(editor.document.uri);
+        const passiveContext = await ContextEngine.getPassiveContext(true);
+        const evidence = await this.collectActiveFileEvidence(prompt, activePath);
+
+        this.ui.addStep('🔎', 'Evidence', activePath);
+        this.ui.statusUpdate?.('Gathered active-file evidence');
+
+        const systemInstruction = `You are Lattice. Answer active-file questions using only the provided active-file context and evidence.
+
+Rules:
+- Do not call tools.
+- Do not invent values that are not present in the evidence or active-file context.
+- If the answer is present, answer concisely and include the source line number when available.
+- If the evidence is insufficient, say exactly what could not be found in the active file.`;
+
+        const evidenceText = evidence || "No direct search evidence was found in the active file.";
+        const request: ChatRequest = {
+            prompt: `Original request: ${prompt}
+
+Active file: ${activePath}
+
+Evidence from active file:
+${evidenceText}
+
+${passiveContext}`,
+            model,
+            workspace: this.workspacePath,
+            tool_history: [],
+            chat_history: this.chatHistory,
+            disableTools: true
+        };
+
+        const response = await ModelFactory.generateWithFallback(ContextEngine.pruneContext(request, 5000), systemInstruction);
+        return response.type === 'message' ? response.content : "I could not answer from the active-file evidence.";
+    }
+
+    private async collectActiveFileEvidence(prompt: string, activePath: string): Promise<string> {
+        const terms = this.deriveEvidenceSearchTerms(prompt);
+        const evidenceLines: string[] = [];
+        const seen = new Set<string>();
+
+        for (const term of terms) {
+            const result = await FileSystemTools.searchWorkspaceRegex(term, activePath);
+            if (result === "No matches found." || result.startsWith("Invalid search pattern:")) {
+                continue;
+            }
+
+            for (const line of result.split('\n')) {
+                if (!seen.has(line)) {
+                    seen.add(line);
+                    evidenceLines.push(line);
+                }
+                if (evidenceLines.length >= 80) {
+                    return evidenceLines.join('\n');
+                }
+            }
+        }
+
+        return evidenceLines.join('\n');
+    }
+
+    private deriveEvidenceSearchTerms(prompt: string): string[] {
+        const normalized = prompt.toLowerCase();
+        const stopWords = new Set([
+            'what', 'where', 'which', 'when', 'why', 'how', 'this', 'that', 'here', 'file',
+            'current', 'active', 'opened', 'open', 'please', 'tell', 'show', 'find', 'read',
+            'explain', 'summarize', 'required', 'need', 'needs', 'run', 'using', 'with', 'from',
+            'into', 'for', 'the', 'and', 'or', 'but', 'can', 'you', 'iis', 'is', 'are', 'to'
+        ]);
+
+        const terms: string[] = [];
+        for (const token of normalized.match(/[a-zA-Z_][a-zA-Z0-9_-]{2,}/g) || []) {
+            if (!stopWords.has(token)) {
+                terms.push(token);
+            }
+        }
+
+        const connectionQuestion = /\b(url|uri|endpoint|api|server|backend|frontend|host|localhost|port|connect|fetch|request)\b/.test(normalized);
+        if (connectionQuestion) {
+            terms.push('http', 'localhost', 'fetch', 'axios', 'url', 'api', 'server', 'endpoint', 'port');
+        }
+
+        return [...new Set(terms)].slice(0, 12);
     }
 
     private async runChatFlow(prompt: string, model: string): Promise<string> {
@@ -152,7 +251,7 @@ Rules:
         const rerouteMarker = '[LATTICE_REROUTE: LANE_2]';
         const systemInstruction = `You are Lattice, an expert AI assistant. Answer the user's question clearly and concisely.
 
-Hard rule: You are in a Chat-Only interface with no tools. If the user explicitly asks you to read, edit, search, run terminal commands, or answer a question about "this file", "current file", "active file", or "open file", you must respond with EXACTLY this string and nothing else: ${rerouteMarker}
+Hard rule: You are in a Chat-Only interface with no tools. If the user explicitly asks you to read, edit, search, run terminal commands, or answer a code/file question about "this file", "current file", "active file", "open file", "here", "this", "above", or "below", you must respond with EXACTLY this string and nothing else: ${rerouteMarker}
 
 ${passiveContext}`;
         const request = {
@@ -181,6 +280,8 @@ Rules:
 - If searching is needed, ONLY use search_workspace_regex with SIMPLE, PLAIN-TEXT patterns: "server", "url", "localhost", "http", "port", or "endpoint"
   - NEVER use regex escapes or backslashes
   - NEVER use patterns with \, $, ^, *, +, ?, [, ] characters
+- search_workspace_regex returns matching file paths, line numbers, and line snippets. If a search result directly answers the question, answer from that result instead of continuing to search.
+- When you have the answer, respond as normal plain text. Do not call tools named print, final, answer, or respond.
 - Do not edit files unless the user explicitly asked for an edit.`;
             return await this.runExecutionFlow(prompt, reroutePlan, model);
         }
@@ -255,11 +356,16 @@ WHEN USING search_workspace_regex:
 - NEVER use regex escape sequences, backslashes, or complex patterns
 - NEVER use patterns like: "server\\s*:", "url.*http", or any regex with \, $, ^, *, +, ?, [, ]
 - If you need to search for special characters, ask the user first
+- search_workspace_regex returns matching file paths, line numbers, and line snippets. If a search result directly answers an information request, answer from that result instead of continuing to search.
+- When you have the answer, respond as normal plain text. Do not call tools named print, final, answer, or respond.
 
 ${passiveContext}`;
 
             this.ui.setLoading("Thinking...");
-            const data: AIResponse = await ModelFactory.generateWithFallback(request, systemInstruction);
+            let data: AIResponse = await ModelFactory.generateWithFallback(request, systemInstruction);
+            if (data.type === 'message') {
+                data = this.tryParseInlineToolCall(data.content) || data;
+            }
 
             if (data.type === 'tool_call') {
                 const toolName = data.tool_name;
@@ -277,7 +383,10 @@ ${passiveContext}`;
                     } else if (toolName === 'list_directory_tree') {
                         toolResultContent = await FileSystemTools.listDirectoryTree(this.workspacePath, targetPath, toolArgs.depth);
                     } else if (toolName === 'search_workspace_regex') {
-                        toolResultContent = await FileSystemTools.searchWorkspaceRegex(toolArgs.pattern);
+                        const searchPath = this.needsActiveFileContext(prompt)
+                            ? (toolArgs.relative_path || this.getActiveFileRelativePath())
+                            : toolArgs.relative_path;
+                        toolResultContent = await FileSystemTools.searchWorkspaceRegex(toolArgs.pattern, searchPath);
                     } else if (toolName === 'edit_file_diff') {
                         const approved = await this.ui.askApproval(targetPath, toolArgs.search_block, toolArgs.replace_block);
                         if (approved) {
@@ -303,6 +412,10 @@ ${passiveContext}`;
                         toolResultContent = await LspIntelligence.getWorkspaceDiagnostics();
                     } else if (toolName === 'execute_command') {
                         toolResultContent = await TerminalTools.executeCommand(toolArgs.command);
+                    } else if (McpClient.isMcpTool(toolName)) {
+                        toolResultContent = await McpClient.executeMcpTool(toolName, toolArgs);
+                    } else {
+                        throw new Error(`Unknown tool: ${toolName}`);
                     }
                 } catch (err: any) {
                     toolResultContent = `Error executing ${toolName}: ${err.message}`;
@@ -327,7 +440,53 @@ ${passiveContext}`;
         else if (toolName === 'search_workspace_regex') { icon = '🔍'; action = 'Searching'; targetPath = String(extra); }
         else if (toolName === 'get_workspace_diagnostics') { icon = '💊'; action = 'Diagnostics'; targetPath = 'Workspace'; }
         else if (toolName === 'execute_command') { icon = '💻'; action = 'Terminal'; targetPath = String(extra); }
+        else if (McpClient.isMcpTool(toolName)) { icon = '🔌'; action = 'MCP Tool'; targetPath = toolName; }
         this.ui.addStep(icon, action, targetPath);
         this.ui.statusUpdate?.(`${action}: ${targetPath}`);
+    }
+
+    private getActiveFileRelativePath(): string | undefined {
+        const editor = vscode.window.activeTextEditor;
+        return editor ? vscode.workspace.asRelativePath(editor.document.uri) : undefined;
+    }
+
+    private tryParseInlineToolCall(content: string): AIResponse | null {
+        const matches = content.match(/\{[^{}]*(?:"pattern"|"relative_path")[^{}]*\}/g);
+        if (!matches) {
+            return null;
+        }
+
+        for (const match of matches) {
+            try {
+                const args = JSON.parse(match);
+                if (typeof args.pattern === 'string') {
+                    return {
+                        type: 'tool_call',
+                        tool_name: 'search_workspace_regex',
+                        arguments: args
+                    };
+                }
+
+                if (typeof args.relative_path === 'string') {
+                    if (typeof args.start_line === 'number' && typeof args.end_line === 'number') {
+                        return {
+                            type: 'tool_call',
+                            tool_name: 'read_file_chunk',
+                            arguments: args
+                        };
+                    }
+
+                    return {
+                        type: 'tool_call',
+                        tool_name: 'list_directory_tree',
+                        arguments: args
+                    };
+                }
+            } catch {
+                continue;
+            }
+        }
+
+        return null;
     }
 }
