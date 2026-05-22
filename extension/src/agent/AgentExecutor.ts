@@ -51,11 +51,16 @@ export class AgentExecutor {
         // Phase 1: Security pre-check and Intent Routing (L0)
         this.ui.setLoading("Running security checks...");
         const sanitize = PromptSanitizer.check(prompt);
+        const needsActiveFileContext = this.needsActiveFileContext(prompt);
         let intent: ExecutionIntent;
         if (sanitize.blocked) {
             intent = 'LANE_3';
             this.ui.addStep('⚠️', 'Risk Check', `Lane 3: ${sanitize.matches.join(', ')}`);
             this.ui.statusUpdate?.('Dangerous prompt detected; routing to Lane 3...');
+        } else if (needsActiveFileContext) {
+            intent = 'code_edit';
+            this.ui.addStep('🔎', 'Routing', 'Lane 2 (Active File Context)');
+            this.ui.statusUpdate?.('Active-file request detected; routing to Lane 2...');
         } else {
             this.ui.setLoading("Classifying intent...");
             this.ui.statusUpdate?.('Routing intent (L0)...');
@@ -67,6 +72,9 @@ export class AgentExecutor {
 
         if (intent === 'chat') {
             finalResponse = await this.runChatFlow(prompt, model);
+        } else if (needsActiveFileContext) {
+            const plan = this.createActiveFileAnswerPlan(prompt);
+            finalResponse = await this.runExecutionFlow(prompt, plan, model);
         } else {
             // Phase 2: Planning & Critic Loop
             const l2Model = settings?.l2Model || model;
@@ -118,12 +126,33 @@ export class AgentExecutor {
         return finalResponse;
     }
 
+    private needsActiveFileContext(prompt: string): boolean {
+        const normalized = prompt.toLowerCase();
+        const referencesActiveFile = /\b(this|current|active|opened|open)\s+file\b/.test(normalized) || /\bin\s+this\s+file\b/.test(normalized);
+        const asksForInspection = /\b(what|where|which|show|find|read|explain|summarize|server\s+url|url|endpoint|port|api)\b/.test(normalized);
+        return referencesActiveFile && asksForInspection;
+    }
+
+    private createActiveFileAnswerPlan(prompt: string): string {
+        return `Answer the user's question about the active file.
+
+Original Request: ${prompt}
+
+Rules:
+- This is an information request about the active file, not an edit request.
+- First inspect the visible active-file context in the system prompt.
+- If the answer is visible there, answer directly.
+- If the answer is not visible there, use read_file_chunk on the active file path from the system prompt to inspect likely sections.
+- If you need to locate a symbol or URL, use simple search_workspace_regex patterns such as "server", "url", "localhost", "http", "endpoint", "port", "fetch", or "axios".
+- Do not edit files.`;
+    }
+
     private async runChatFlow(prompt: string, model: string): Promise<string> {
         const passiveContext = await ContextEngine.getPassiveContext(true);
         const rerouteMarker = '[LATTICE_REROUTE: LANE_2]';
         const systemInstruction = `You are Lattice, an expert AI assistant. Answer the user's question clearly and concisely.
 
-Hard rule: You are in a Chat-Only interface with no tools. If the user explicitly asks you to read, edit, search, or run terminal commands, you must respond with EXACTLY this string and nothing else: ${rerouteMarker}
+Hard rule: You are in a Chat-Only interface with no tools. If the user explicitly asks you to read, edit, search, run terminal commands, or answer a question about "this file", "current file", "active file", or "open file", you must respond with EXACTLY this string and nothing else: ${rerouteMarker}
 
 ${passiveContext}`;
         const request = {
@@ -141,7 +170,19 @@ ${passiveContext}`;
 
         if (response.content.includes(rerouteMarker)) {
             this.ui.addStep('🔀', 'Rerouting', 'Lane 2 tool execution');
-            return await this.runExecutionFlow(prompt, prompt, model);
+            const reroutePlan = `Answer the user's request using Lane 2 capabilities.
+
+Original Request: ${prompt}
+
+Rules:
+- This may be an information request, not an edit request.
+- If the answer is visible in the active-file context, answer directly without calling tools.
+- If more context is needed from the active file, prefer read_file_chunk with the active file path and relevant line range.
+- If searching is needed, ONLY use search_workspace_regex with SIMPLE, PLAIN-TEXT patterns: "server", "url", "localhost", "http", "port", or "endpoint"
+  - NEVER use regex escapes or backslashes
+  - NEVER use patterns with \, $, ^, *, +, ?, [, ] characters
+- Do not edit files unless the user explicitly asked for an edit.`;
+            return await this.runExecutionFlow(prompt, reroutePlan, model);
         }
 
         return response.content;
@@ -206,6 +247,14 @@ ${passiveContext}`;
             const systemInstruction = `You are Lattice. Execute the implementation plan surgically.
 
 You only have partial visibility into the user's active file to save memory. If you need to understand the full structure or find specific variables, you MUST use the search_workspace_regex or read_file_chunk tools before attempting an edit.
+
+For information requests, answer directly when the visible active-file context contains the answer. If you need tools for an information request, prefer read_file_chunk for the active file. 
+
+WHEN USING search_workspace_regex:
+- ONLY use simple, plain-text patterns: "server", "url", "localhost", "http", "port", "endpoint"
+- NEVER use regex escape sequences, backslashes, or complex patterns
+- NEVER use patterns like: "server\\s*:", "url.*http", or any regex with \, $, ^, *, +, ?, [, ]
+- If you need to search for special characters, ask the user first
 
 ${passiveContext}`;
 
