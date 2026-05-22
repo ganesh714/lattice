@@ -3,6 +3,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { AgentExecutor, IAgentUI } from '../agent/AgentExecutor';
 import { ChatMessage } from '../types/schemas';
+import { McpClient } from '../tools/McpClient';
 
 export class LatticeChatProvider implements vscode.WebviewViewProvider, IAgentUI {
     public static readonly viewType = 'lattice.chatView';
@@ -29,7 +30,18 @@ export class LatticeChatProvider implements vscode.WebviewViewProvider, IAgentUI
 
     constructor(
         private readonly _extensionUri: vscode.Uri,
-    ) { }
+    ) {
+        vscode.workspace.onDidChangeConfiguration(async (e) => {
+            if (e.affectsConfiguration('lattice.mcp.servers')) {
+                const workspacePath = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || '';
+                try {
+                    await McpClient.initialize(workspacePath, this);
+                } catch (err: any) {
+                    console.error("[Lattice] Failed to reload MCP servers on config change:", err);
+                }
+            }
+        });
+    }
 
     private ensureDiffProvider() {
         if (this._diffProviderRegistration) return;
@@ -56,6 +68,11 @@ export class LatticeChatProvider implements vscode.WebviewViewProvider, IAgentUI
 
     statusUpdate(text: string) {
         this._view?.webview.postMessage({ type: 'statusUpdate', value: text });
+    }
+
+    sendMcpStatusUpdate() {
+        const statuses = McpClient.getServersStatus();
+        this._view?.webview.postMessage({ type: 'mcpStatusUpdate', servers: statuses });
     }
 
     getSettings() {
@@ -141,6 +158,14 @@ export class LatticeChatProvider implements vscode.WebviewViewProvider, IAgentUI
                     availableModels: config.get<any>('models.availableModels') || {}
                 };
                 webviewView.webview.postMessage({ type: 'initSettings', settings: this._settings });
+                
+                // Initialize MCP Client
+                const workspacePath = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || '';
+                McpClient.initialize(workspacePath, this).then(() => {
+                    this.sendMcpStatusUpdate();
+                }).catch(e => {
+                    console.error("[Lattice] McpClient failed to initialize:", e);
+                });
             } else if (message.type === 'prompt') {
                 // Lazily create a persistent executor for the session
                 const workspacePath = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || '';
@@ -203,6 +228,35 @@ export class LatticeChatProvider implements vscode.WebviewViewProvider, IAgentUI
                 if (pending) {
                     pending.resolve(message.type === 'approvePlan');
                     this._pendingPlanApprovals.delete(message.id);
+                }
+            } else if (message.type === 'addMcpServer') {
+                try {
+                    const config = vscode.workspace.getConfiguration('lattice');
+                    const settingsServers = config.get<any>('mcp.servers') || {};
+                    const updatedServers = {
+                        ...settingsServers,
+                        [message.name]: {
+                            command: message.command,
+                            args: message.args || [],
+                            env: message.env || {}
+                        }
+                    };
+                    await config.update('mcp.servers', updatedServers, vscode.ConfigurationTarget.Global);
+                    console.log(`[Lattice] Added MCP Server ${message.name}`);
+                } catch (e: any) {
+                    console.error(`[Lattice] Failed to add MCP server:`, e);
+                    vscode.window.showErrorMessage(`Failed to add MCP server: ${e.message}`);
+                }
+            } else if (message.type === 'removeMcpServer') {
+                try {
+                    const config = vscode.workspace.getConfiguration('lattice');
+                    const settingsServers = { ...(config.get<any>('mcp.servers') || {}) };
+                    delete settingsServers[message.name];
+                    await config.update('mcp.servers', settingsServers, vscode.ConfigurationTarget.Global);
+                    console.log(`[Lattice] Removed MCP Server ${message.name}`);
+                } catch (e: any) {
+                    console.error(`[Lattice] Failed to remove MCP server:`, e);
+                    vscode.window.showErrorMessage(`Failed to remove MCP server: ${e.message}`);
                 }
             }
         });
