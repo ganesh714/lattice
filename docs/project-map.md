@@ -80,6 +80,7 @@ Tool implementations available to the agent loop.
 - `Terminal.ts`: command execution helper.
 - `LspIntelligence.ts`: workspace diagnostics helper.
 - `Security.ts`: regex-based prompt risk detector.
+- `McpClient.ts`: universal MCP client implementing JSON-RPC 2.0 communication over stdin/stdout to connect to external servers and load/run dynamic tools.
 
 ### `src/webview/`
 
