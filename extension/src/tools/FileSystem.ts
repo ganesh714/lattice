@@ -35,11 +35,18 @@ export class FileSystemTools {
         const uint8Array = await vscode.workspace.fs.readFile(targetUri);
         const content = new TextDecoder().decode(uint8Array);
         const lines = content.split('\n');
-        return lines.slice(startLine - 1, endLine).join('\n');
+        const safeStartLine = Math.max(1, startLine || 1);
+        const safeEndLine = Math.min(lines.length, endLine || safeStartLine);
+        return lines
+            .slice(safeStartLine - 1, safeEndLine)
+            .map((line, index) => `${safeStartLine + index}: ${line}`)
+            .join('\n');
     }
 
-    static async searchWorkspaceRegex(pattern: string): Promise<string> {
-        const files = await vscode.workspace.findFiles('**/*', '**/node_modules/**');
+    static async searchWorkspaceRegex(pattern: string, relativePath?: string): Promise<string> {
+        const files = relativePath
+            ? [vscode.Uri.file(path.isAbsolute(relativePath) ? relativePath : path.join(vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || '', relativePath))]
+            : await vscode.workspace.findFiles('**/*', '**/node_modules/**');
         let matches: string[] = [];
         
         // Validate and sanitize the pattern - only allow simple text search
@@ -61,11 +68,17 @@ export class FileSystemTools {
             try {
                 const uint8Array = await vscode.workspace.fs.readFile(file);
                 const content = new TextDecoder().decode(uint8Array);
-                if (regex.test(content)) {
-                    matches.push(vscode.workspace.asRelativePath(file));
+                const lines = content.split('\n');
+                const relativePath = vscode.workspace.asRelativePath(file);
+                for (let index = 0; index < lines.length; index++) {
+                    if (regex.test(lines[index])) {
+                        matches.push(`${relativePath}:${index + 1}: ${lines[index].trim()}`);
+                        if (matches.length >= 50) {
+                            return matches.join('\n');
+                        }
+                    }
                 }
             } catch (e) {}
-            if (matches.length > 20) break;
         }
         return matches.length > 0 ? matches.join('\n') : "No matches found.";
     }
