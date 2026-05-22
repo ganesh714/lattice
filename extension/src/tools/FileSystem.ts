@@ -41,7 +41,21 @@ export class FileSystemTools {
     static async searchWorkspaceRegex(pattern: string): Promise<string> {
         const files = await vscode.workspace.findFiles('**/*', '**/node_modules/**');
         let matches: string[] = [];
-        const regex = new RegExp(pattern, 'i');
+        
+        // Validate and sanitize the pattern - only allow simple text search
+        let regex: RegExp;
+        try {
+            // If pattern contains regex special chars or backslashes, treat it as literal text
+            if (/[\\$^*+?\[\](){}|]/.test(pattern)) {
+                // Escape special regex characters and treat as literal
+                const escapedPattern = pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                regex = new RegExp(escapedPattern, 'i');
+            } else {
+                regex = new RegExp(pattern, 'i');
+            }
+        } catch (e: any) {
+            return `Invalid search pattern: ${e.message}. Use simple text like 'server', 'url', 'localhost', or 'http'.`;
+        }
         
         for (const file of files) {
             try {
