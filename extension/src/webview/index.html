@@ -92,6 +92,64 @@
                         <option value="" disabled selected>Select a model...</option>
                     </select>
                 </div>
+
+                <div class="settings-divider"></div>
+
+                <!-- MCP Section -->
+                <div class="mcp-section">
+                    <h3>🔌 MCP Servers</h3>
+                    
+                    <div id="mcp-servers-list">
+                        <p class="loading">Loading server connection status...</p>
+                    </div>
+                    
+                    <div class="add-mcp-form">
+                        <h4>Add New Server</h4>
+                        
+                        <div class="settings-group">
+                            <label for="mcp-preset-select">Preset Server</label>
+                            <select id="mcp-preset-select">
+                                <option value="postgres">🐘 PostgreSQL (Community)</option>
+                                <option value="github">🐙 GitHub (Community)</option>
+                                <option value="sqlite">💾 SQLite (Community)</option>
+                                <option value="custom" selected>⚙️ Custom Configuration</option>
+                            </select>
+                        </div>
+
+                        <div class="settings-group">
+                            <label for="mcp-name-input">Server Name</label>
+                            <input type="text" id="mcp-name-input" placeholder="e.g. postgres-db" />
+                        </div>
+
+                        <div class="settings-group" id="mcp-command-group">
+                            <label for="mcp-command-input">Command</label>
+                            <input type="text" id="mcp-command-input" placeholder="e.g. npx" />
+                        </div>
+
+                        <div class="settings-group" id="mcp-args-group">
+                            <label for="mcp-args-input">Arguments (JSON array)</label>
+                            <input type="text" id="mcp-args-input" placeholder='e.g. ["-y", "@modelcontextprotocol/server-postgres"]' />
+                        </div>
+
+                        <div class="settings-group" id="mcp-env-group">
+                            <label for="mcp-env-input">Environment Variables (JSON object)</label>
+                            <input type="text" id="mcp-env-input" placeholder='e.g. {"DB_USER": "postgres"}' />
+                        </div>
+
+                        <!-- Dynamic Preset Input Fields -->
+                        <div class="settings-group hidden" id="mcp-preset-uri-group">
+                            <label for="mcp-preset-uri-input">Connection URI / Path</label>
+                            <input type="text" id="mcp-preset-uri-input" placeholder="e.g. postgresql://localhost/mydb" />
+                        </div>
+
+                        <div class="settings-group hidden" id="mcp-preset-token-group">
+                            <label for="mcp-preset-token-input">Access Token</label>
+                            <input type="password" id="mcp-preset-token-input" placeholder="Enter API Token" />
+                        </div>
+
+                        <button id="add-mcp-btn" class="btn btn-primary" style="width: 100%; margin-top: 10px;">Add MCP Server</button>
+                    </div>
+                </div>
             </div>
             <div class="modal-footer">
                 <button id="settings-save-btn" class="btn btn-primary">Save & Close</button>
