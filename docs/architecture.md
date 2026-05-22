@@ -98,8 +98,16 @@ Files:
 - `extension/src/tools/FileSystem.ts`
 - `extension/src/tools/Terminal.ts`
 - `extension/src/tools/LspIntelligence.ts`
+- `extension/src/tools/McpClient.ts`
 
 Tools are exposed to model providers through schemas and executed by `AgentExecutor.runExecutionFlow(...)`.
+
+### Tool Tiers & Division of Labor
+
+The tool layer is divided into two distinct categories:
+
+1. **Native Scalpel (0% MCP)**: Core file editing (`edit_file_diff`) and compiler feedback diagnostics (`getWorkspaceDiagnostics`) are built natively using VS Code APIs. This guarantees millisecond latency and precision for L1 self-healing compiler loops without network overhead.
+2. **External Knowledge & Platforms (100% MCP)**: Any external context is fetched using community-built Model Context Protocol (MCP) servers (e.g. Postgres, MySQL, Jira, GitHub tickets, Slack, Notion, Confluence). This makes Lattice highly scalable without requiring custom API integration code for each service.
 
 The safest file mutation path is `edit_file_diff`, because it:
 
