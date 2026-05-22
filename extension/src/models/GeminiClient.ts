@@ -30,7 +30,17 @@ export class GeminiClient implements IAIProvider {
             systemInstruction: systemInstruction,
         };
         if (!request.disableTools) {
-            modelOptions.tools = [{ functionDeclarations: LATTICE_TOOLS }];
+            // Ensure tools are properly formatted for Gemini
+            const tools = LATTICE_TOOLS.map(tool => ({
+                name: tool.name,
+                description: tool.description || "",
+                inputSchema: {
+                    type: tool.parameters.type || "object",
+                    properties: tool.parameters.properties || {},
+                    required: tool.parameters.required || []
+                }
+            }));
+            modelOptions.tools = [{ functionDeclarations: tools }];
         }
         const model = genAI.getGenerativeModel(modelOptions);
 
@@ -73,23 +83,29 @@ export class GeminiClient implements IAIProvider {
             });
         }
 
-        const result = await model.generateContent({ contents });
-        const response = await result.response;
-        
-        // Check for function calls
-        const functionCalls = response.functionCalls();
-        if (functionCalls && functionCalls.length > 0) {
-            const call = functionCalls[0];
-            return {
-                type: "tool_call",
-                tool_name: call.name,
-                arguments: call.args as Record<string, any>
-            };
-        }
+        try {
+            const result = await model.generateContent({ contents });
+            const response = await result.response;
+            
+            // Check for function calls
+            const functionCalls = response.functionCalls();
+            if (functionCalls && functionCalls.length > 0) {
+                const call = functionCalls[0];
+                return {
+                    type: "tool_call",
+                    tool_name: call.name,
+                    arguments: call.args as Record<string, any>
+                };
+            }
 
-        return {
-            type: "message",
-            content: response.text()
-        };
+            return {
+                type: "message",
+                content: response.text()
+            };
+        } catch (error: any) {
+            console.error("[GeminiClient] API Error:", error);
+            console.error("[GeminiClient] Model options:", JSON.stringify(modelOptions, null, 2));
+            throw error;
+        }
     }
 }
