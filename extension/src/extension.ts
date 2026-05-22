@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { LatticeChatProvider } from './providers/LatticeChatProvider';
 import { OnnxClient } from './models/OnnxClient';
+import { McpClient } from './tools/McpClient';
 
 /**
  * Lattice Extension Entry Point
@@ -21,4 +22,5 @@ export function activate(context: vscode.ExtensionContext) {
 
 export function deactivate() {
     console.log('[Lattice] Extension is deactivating...');
+    McpClient.shutdown();
 }
