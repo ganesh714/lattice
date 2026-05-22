@@ -52,6 +52,27 @@ Important keys:
 - `lattice.models.l1Model`
 - `lattice.models.l2Model`
 - `lattice.models.availableModels`
+- `lattice.mcp.servers`
+
+### MCP Servers Configuration
+
+Lattice automatically connects to configured Model Context Protocol (MCP) servers on startup, dynamic reload, or configuration changes. You can configure them in two ways:
+
+1. **Workspace Configuration File (`lattice-mcp.json`)**: Create a file named `lattice-mcp.json` at the root of the workspace. Its format matches standard Claude Desktop server configurations:
+   ```json
+   {
+     "mcpServers": {
+       "postgres": {
+         "command": "npx",
+         "args": ["-y", "@modelcontextprotocol/server-postgres", "postgresql://localhost/mydb"],
+         "env": {
+           "PGPASSWORD": "mysecretpassword"
+         }
+       }
+     }
+   }
+   ```
+2. **VS Code Settings (`lattice.mcp.servers`)**: Direct configuration under `settings.json` using the same object format.
 
 The webview settings modal writes these values back into VS Code configuration through `LatticeChatProvider`.
 
