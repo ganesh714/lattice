@@ -73,7 +73,16 @@ export class GroqClient implements IAIProvider {
             payload.tool_choice = "auto";
         }
 
-        const completion = await groq.chat.completions.create(payload);
+        let completion: any;
+        try {
+            completion = await groq.chat.completions.create(payload);
+        } catch (error: any) {
+            const recoveredToolCall = this.tryRecoverFailedToolCall(error);
+            if (recoveredToolCall) {
+                return recoveredToolCall;
+            }
+            throw error;
+        }
 
         const responseMessage = completion.choices[0].message;
 
@@ -90,5 +99,51 @@ export class GroqClient implements IAIProvider {
             type: "message",
             content: responseMessage.content || ""
         };
+    }
+
+    private tryRecoverFailedToolCall(error: any): AIResponse | null {
+        const failedGeneration = error?.error?.failed_generation || error?.failed_generation;
+        if (typeof failedGeneration !== "string") {
+            return null;
+        }
+
+        const match =
+            failedGeneration.match(/<function=([a-zA-Z0-9_-]+)\(([\s\S]*)\)<\/function>/) ||
+            failedGeneration.match(/<function=([a-zA-Z0-9_-]+)>\s*([\s\S]*?)\s*<\/function>/);
+        if (!match) {
+            return null;
+        }
+
+        try {
+            const toolName = match[1];
+            const toolArgs = JSON.parse(match[2]);
+            if (!LATTICE_TOOLS.some(tool => tool.name === toolName)) {
+                return {
+                    type: "message",
+                    content: this.extractMessageFromFailedGeneration(failedGeneration, toolArgs)
+                };
+            }
+
+            return {
+                type: "tool_call",
+                tool_name: toolName,
+                arguments: toolArgs
+            };
+        } catch {
+            return null;
+        }
+    }
+
+    private extractMessageFromFailedGeneration(failedGeneration: string, toolArgs: Record<string, any>): string {
+        if (typeof toolArgs.text === "string" && toolArgs.text.trim()) {
+            return toolArgs.text.trim();
+        }
+
+        const withoutFunctionCall = failedGeneration.replace(/<function=[\s\S]*?<\/function>/g, "").trim();
+        if (withoutFunctionCall) {
+            return withoutFunctionCall;
+        }
+
+        return "The model attempted to call an unsupported tool instead of replying in plain text.";
     }
 }
