@@ -52,6 +52,23 @@
         const l1ModelSelect = document.getElementById('l1-model-select');
         const l2ModelSelect = document.getElementById('l2-model-select');
 
+        // MCP elements
+        const mcpServersList = document.getElementById('mcp-servers-list');
+        const mcpPresetSelect = document.getElementById('mcp-preset-select');
+        const mcpNameInput = document.getElementById('mcp-name-input');
+        const mcpCommandInput = document.getElementById('mcp-command-input');
+        const mcpArgsInput = document.getElementById('mcp-args-input');
+        const mcpEnvInput = document.getElementById('mcp-env-input');
+        const mcpPresetUriInput = document.getElementById('mcp-preset-uri-input');
+        const mcpPresetTokenInput = document.getElementById('mcp-preset-token-input');
+        const addMcpBtn = document.getElementById('add-mcp-btn');
+
+        const mcpCommandGroup = document.getElementById('mcp-command-group');
+        const mcpArgsGroup = document.getElementById('mcp-args-group');
+        const mcpEnvGroup = document.getElementById('mcp-env-group');
+        const mcpPresetUriGroup = document.getElementById('mcp-preset-uri-group');
+        const mcpPresetTokenGroup = document.getElementById('mcp-preset-token-group');
+
     let currentBotContainer = null;
     let currentStepsDetails = null;
     let isGenerating = false;
@@ -204,6 +221,9 @@
                 break;
             case 'debugUpdate':
                 renderDebugPanel(message.chat_history, message.tool_history);
+                break;
+            case 'mcpStatusUpdate':
+                renderMcpServers(message.servers);
                 break;
         }
     });
@@ -708,6 +728,219 @@
         fetchGroqModelsBtn.addEventListener('click', fetchGroqModels);
     }
     
+    // MCP Form Preset listener and dynamic updates
+    function updateMcpFormFields() {
+        const preset = mcpPresetSelect.value;
+        // Hide all groups first
+        [mcpCommandGroup, mcpArgsGroup, mcpEnvGroup, mcpPresetUriGroup, mcpPresetTokenGroup].forEach(g => {
+            if (g) g.classList.add('hidden');
+        });
+
+        if (preset === 'custom') {
+            if (mcpCommandGroup) mcpCommandGroup.classList.remove('hidden');
+            if (mcpArgsGroup) mcpArgsGroup.classList.remove('hidden');
+            if (mcpEnvGroup) mcpEnvGroup.classList.remove('hidden');
+            if (mcpNameInput) mcpNameInput.value = 'custom-server';
+        } else if (preset === 'postgres') {
+            if (mcpPresetUriGroup) mcpPresetUriGroup.classList.remove('hidden');
+            if (mcpPresetUriInput) mcpPresetUriInput.placeholder = 'e.g. postgresql://localhost/mydb';
+            if (mcpNameInput) mcpNameInput.value = 'postgres';
+        } else if (preset === 'github') {
+            if (mcpPresetTokenGroup) mcpPresetTokenGroup.classList.remove('hidden');
+            if (mcpNameInput) mcpNameInput.value = 'github';
+        } else if (preset === 'sqlite') {
+            if (mcpPresetUriGroup) mcpPresetUriGroup.classList.remove('hidden');
+            if (mcpPresetUriInput) mcpPresetUriInput.placeholder = 'e.g. D:\\db.sqlite';
+            if (mcpNameInput) mcpNameInput.value = 'sqlite';
+        }
+    }
+
+    if (mcpPresetSelect) {
+        mcpPresetSelect.addEventListener('change', updateMcpFormFields);
+        updateMcpFormFields();
+    }
+
+    if (addMcpBtn) {
+        addMcpBtn.addEventListener('click', () => {
+            const name = mcpNameInput.value.trim();
+            if (!name) {
+                alert('Please enter a server name.');
+                return;
+            }
+
+            const preset = mcpPresetSelect.value;
+            let command = '';
+            let args = [];
+            let env = {};
+
+            if (preset === 'custom') {
+                command = mcpCommandInput.value.trim();
+                if (!command) {
+                    alert('Please enter a command.');
+                    return;
+                }
+                const argsStr = mcpArgsInput.value.trim();
+                if (argsStr) {
+                    try {
+                        args = JSON.parse(argsStr);
+                        if (!Array.isArray(args)) {
+                            throw new Error('Arguments must be a JSON array.');
+                        }
+                    } catch (e) {
+                        args = argsStr.split(',').map(s => s.trim()).filter(Boolean);
+                    }
+                }
+                const envStr = mcpEnvInput.value.trim();
+                if (envStr) {
+                    try {
+                        env = JSON.parse(envStr);
+                    } catch (e) {
+                        alert('Environment variables must be a valid JSON object.');
+                        return;
+                    }
+                }
+            } else if (preset === 'postgres') {
+                const uri = mcpPresetUriInput.value.trim();
+                if (!uri) {
+                    alert('Please enter your PostgreSQL connection URI.');
+                    return;
+                }
+                command = 'npx';
+                args = ['-y', '@modelcontextprotocol/server-postgres', uri];
+            } else if (preset === 'github') {
+                const token = mcpPresetTokenInput.value.trim();
+                if (!token) {
+                    alert('Please enter your GitHub Personal Access Token.');
+                    return;
+                }
+                command = 'npx';
+                args = ['-y', '@modelcontextprotocol/server-github'];
+                env = { 'GITHUB_PERSONAL_ACCESS_TOKEN': token };
+            } else if (preset === 'sqlite') {
+                const pathVal = mcpPresetUriInput.value.trim();
+                if (!pathVal) {
+                    alert('Please enter the database file path.');
+                    return;
+                }
+                command = 'npx';
+                args = ['-y', '@modelcontextprotocol/server-sqlite', pathVal];
+            }
+
+            if (vscode) {
+                vscode.postMessage({
+                    type: 'addMcpServer',
+                    name,
+                    command,
+                    args,
+                    env
+                });
+                
+                // Clear dynamic fields
+                if (mcpPresetUriInput) mcpPresetUriInput.value = '';
+                if (mcpPresetTokenInput) mcpPresetTokenInput.value = '';
+                if (mcpCommandInput) mcpCommandInput.value = '';
+                if (mcpArgsInput) mcpArgsInput.value = '';
+                if (mcpEnvInput) mcpEnvInput.value = '';
+            }
+        });
+    }
+
+    function renderMcpServers(servers) {
+        if (!mcpServersList) return;
+        mcpServersList.innerHTML = '';
+
+        if (!servers || servers.length === 0) {
+            mcpServersList.innerHTML = '<p class="loading">No MCP servers registered.</p>';
+            return;
+        }
+
+        servers.forEach(server => {
+            const card = document.createElement('div');
+            card.className = 'mcp-server-card';
+
+            const statusClass = `status-${server.status}`;
+            const statusLabel = server.status === 'connected' ? 'Connected' : (server.status === 'connecting' ? 'Connecting' : 'Failed');
+            const statusDot = server.status === 'connected' ? '🟢' : (server.status === 'connecting' ? '🟡' : '🔴');
+
+            // Header
+            const header = document.createElement('div');
+            header.className = 'mcp-server-header';
+            header.innerHTML = `
+                <div class="mcp-server-name-container">
+                    <span class="mcp-server-name">${escapeHtml(server.name)}</span>
+                    <span class="mcp-status-badge ${statusClass}">${statusDot} ${statusLabel}</span>
+                </div>
+            `;
+            card.appendChild(header);
+
+            // Error message if failed
+            if (server.errorText) {
+                const errDiv = document.createElement('div');
+                errDiv.className = 'mcp-server-error';
+                errDiv.textContent = server.errorText;
+                card.appendChild(errDiv);
+            }
+
+            // Tools collapse container if any
+            let toolsContainer = null;
+            if (server.tools && server.tools.length > 0) {
+                toolsContainer = document.createElement('div');
+                toolsContainer.className = 'mcp-server-tools hidden';
+                server.tools.forEach(tool => {
+                    const toolItem = document.createElement('div');
+                    toolItem.className = 'mcp-tool-item';
+                    toolItem.innerHTML = `
+                        <span class="mcp-tool-name">${escapeHtml(tool.name)}</span>
+                        <span class="mcp-tool-desc">${escapeHtml(tool.description || 'No description')}</span>
+                    `;
+                    toolsContainer.appendChild(toolItem);
+                });
+                card.appendChild(toolsContainer);
+            }
+
+            // Actions row
+            const actions = document.createElement('div');
+            actions.className = 'mcp-server-actions';
+
+            if (server.tools && server.tools.length > 0) {
+                const toggleBtn = document.createElement('button');
+                toggleBtn.className = 'mcp-card-btn';
+                toggleBtn.textContent = `Show Tools (${server.tools.length})`;
+                toggleBtn.addEventListener('click', () => {
+                    if (toolsContainer) {
+                        const isHidden = toolsContainer.classList.contains('hidden');
+                        if (isHidden) {
+                            toolsContainer.classList.remove('hidden');
+                            toggleBtn.textContent = 'Hide Tools';
+                        } else {
+                            toolsContainer.classList.add('hidden');
+                            toggleBtn.textContent = `Show Tools (${server.tools.length})`;
+                        }
+                    }
+                });
+                actions.appendChild(toggleBtn);
+            }
+
+            const deleteBtn = document.createElement('button');
+            deleteBtn.className = 'mcp-card-btn mcp-card-btn-delete';
+            deleteBtn.textContent = 'Delete';
+            deleteBtn.addEventListener('click', () => {
+                if (confirm(`Are you sure you want to remove the MCP server "${server.name}"?`)) {
+                    if (vscode) {
+                        vscode.postMessage({
+                            type: 'removeMcpServer',
+                            name: server.name
+                        });
+                    }
+                }
+            });
+            actions.appendChild(deleteBtn);
+
+            card.appendChild(actions);
+            mcpServersList.appendChild(card);
+        });
+    }
+
     // Close modal on overlay click
     const modalOverlay = document.querySelector('.modal-overlay');
     if (modalOverlay) {
