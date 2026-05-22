@@ -12,3 +12,4 @@ backend/.venv/
 # General
 .DS_Store
 .vscode/
+scratch/
