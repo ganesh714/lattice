@@ -54,7 +54,11 @@ export class OllamaClient implements IAIProvider {
             stream: false
         };
         if (!request.disableTools) {
-            payload.tools = LATTICE_TOOLS.map(t => ({
+            let tools = LATTICE_TOOLS;
+            if (request.allowedTools) {
+                tools = tools.filter(t => request.allowedTools!.includes(t.name));
+            }
+            payload.tools = tools.map(t => ({
                 type: "function",
                 function: t
             }));

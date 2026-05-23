@@ -30,8 +30,12 @@ export class GeminiClient implements IAIProvider {
             systemInstruction: systemInstruction,
         };
         if (!request.disableTools) {
+            let tools = LATTICE_TOOLS;
+            if (request.allowedTools) {
+                tools = tools.filter(tool => request.allowedTools!.includes(tool.name));
+            }
             // Ensure tools are properly formatted for Gemini
-            const tools = LATTICE_TOOLS.map(tool => ({
+            const formattedTools = tools.map(tool => ({
                 name: tool.name,
                 description: tool.description || "",
                 inputSchema: {
@@ -40,7 +44,7 @@ export class GeminiClient implements IAIProvider {
                     required: tool.parameters.required || []
                 }
             }));
-            modelOptions.tools = [{ functionDeclarations: tools }];
+            modelOptions.tools = [{ functionDeclarations: formattedTools }];
         }
         const model = genAI.getGenerativeModel(modelOptions);
 
