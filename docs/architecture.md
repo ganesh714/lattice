@@ -100,7 +100,7 @@ Files:
 - `extension/src/tools/LspIntelligence.ts`
 - `extension/src/tools/McpClient.ts`
 
-Tools are exposed to model providers through schemas and executed by `AgentExecutor.runExecutionFlow(...)`.
+Tools are exposed to model providers through schemas and executed by `AgentExecutor.runExecutionFlow(...)` (Lane 2) or `AgentExecutor.runChatFlow(...)` (Lane 1).
 
 ### Tool Tiers & Division of Labor
 
@@ -108,6 +108,12 @@ The tool layer is divided into two distinct categories:
 
 1. **Native Scalpel (0% MCP)**: Core file editing (`edit_file_diff`) and compiler feedback diagnostics (`getWorkspaceDiagnostics`) are built natively using VS Code APIs. This guarantees millisecond latency and precision for L1 self-healing compiler loops without network overhead.
 2. **External Knowledge & Platforms (100% MCP)**: Any external context is fetched using community-built Model Context Protocol (MCP) servers (e.g. Postgres, MySQL, Jira, GitHub tickets, Slack, Notion, Confluence). This makes Lattice highly scalable without requiring custom API integration code for each service.
+
+### Safe Fetching and Tool Restriction
+
+To maintain absolute codebase safety while maximizing responsiveness, the tool schemas can be dynamically restricted using the `allowedTools` constraint in `ChatRequest`:
+- **Lane 1 (Chat Path / Fast Path)**: Restricts tools to a safe, read-only "fetching" subset: `list_directory_tree`, `read_file_chunk`, and `search_workspace_regex`. Code mutation (`edit_file_diff`) and command execution (`execute_command`) are blocked. This allows Lane 1 to resolve codebase informational queries instantly without planning or L2 Critic plan verification.
+- **Lane 2 (Work Path / Edit Path)**: Has full access to mutation and active execution tools, but requires a formal implementation plan and L2 Critic plan verification before execution starts.
 
 The safest file mutation path is `edit_file_diff`, because it:
 

@@ -24,10 +24,12 @@ chat flow or work flow
 Used when intent is `chat`.
 
 1. `AgentExecutor.runChatFlow(...)` asks `ContextEngine` for passive context.
-2. The request is sent through `ModelFactory.generateWithFallback(...)`.
-3. Tools are disabled.
-4. If the chat model returns `[LATTICE_REROUTE: LANE_2]`, the executor suppresses that marker and immediately enters `runExecutionFlow(...)` with the original user prompt.
-5. Otherwise, the text response is rendered in the webview.
+2. Safe, read-only fetching tools (`list_directory_tree`, `read_file_chunk`, and `search_workspace_regex`) are enabled using the `allowedTools` constraint, while code-mutating tools (`edit_file_diff`) and active command execution (`execute_command`) remain disabled.
+3. The request is sent through `ModelFactory.generateWithFallback(...)`.
+4. `runChatFlow(...)` enters a lightweight execution loop to process tool calls.
+5. For each tool call, the tool is executed and its result appended to the tool history. If the model attempts to invoke any tool outside the safe fetching list, the executor automatically triggers a Lane 2 reroute.
+6. If the chat model returns `[LATTICE_REROUTE: LANE_2]`, the executor suppresses that marker and immediately enters `runExecutionFlow(...)` (Lane 2) with the original user prompt.
+7. Otherwise, the final text response is rendered in the webview.
 
 The reroute marker is an escape hatch for misclassified prompts. It lets a chat-only model hand off explicit read, edit, search, or terminal requests to the tool-enabled execution loop.
 
