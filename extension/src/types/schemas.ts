@@ -16,6 +16,7 @@ export interface ChatRequest {
     tool_history: ToolResponse[];
     chat_history: ChatMessage[];
     disableTools?: boolean;
+    allowedTools?: string[];
 }
 
 export interface ToolCall {
