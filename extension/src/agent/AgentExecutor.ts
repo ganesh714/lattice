@@ -58,10 +58,6 @@ export class AgentExecutor {
             intent = 'LANE_3';
             this.ui.addStep('⚠️', 'Risk Check', `Lane 3: ${sanitize.matches.join(', ')}`);
             this.ui.statusUpdate?.('Dangerous prompt detected; routing to Lane 3...');
-        } else if (needsActiveFileContext) {
-            intent = 'code_edit';
-            this.ui.addStep('🔎', 'Routing', 'Lane 2 (Active File Context)');
-            this.ui.statusUpdate?.('Active-file request detected; routing to Lane 2...');
         } else {
             this.ui.setLoading("Classifying intent...");
             this.ui.statusUpdate?.('Routing intent (L0)...');
@@ -73,7 +69,7 @@ export class AgentExecutor {
 
         if (intent === 'chat') {
             finalResponse = await this.runChatFlow(prompt, model);
-        } else if (needsActiveFileContext) {
+        } else if (intent === 'code_edit' && needsActiveFileContext) {
             finalResponse = await this.runActiveFileEvidenceFlow(prompt, model);
         } else {
             // Phase 2: Planning & Critic Loop
