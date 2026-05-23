@@ -112,8 +112,8 @@ export class GroqClient implements IAIProvider {
         }
 
         const match =
-            failedGeneration.match(/<function=([a-zA-Z0-9_-]+)\(([\s\S]*)\)<\/function>/) ||
-            failedGeneration.match(/<function=([a-zA-Z0-9_-]+)>\s*([\s\S]*?)\s*<\/function>/);
+            failedGeneration.match(/<function=([a-zA-Z0-9_-]+)\(([\s\S]*?)\)<(?:\/)?function>/) ||
+            failedGeneration.match(/<function=([a-zA-Z0-9_-]+)>\s*([\s\S]*?)\s*<(?:\/)?function>/);
         if (!match) {
             return null;
         }
@@ -143,7 +143,7 @@ export class GroqClient implements IAIProvider {
             return toolArgs.text.trim();
         }
 
-        const withoutFunctionCall = failedGeneration.replace(/<function=[\s\S]*?<\/function>/g, "").trim();
+        const withoutFunctionCall = failedGeneration.replace(/<function=[\s\S]*?<\/?function>/g, "").trim();
         if (withoutFunctionCall) {
             return withoutFunctionCall;
         }
