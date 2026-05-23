@@ -249,27 +249,49 @@ ${passiveContext}`,
     private async runChatFlow(prompt: string, model: string): Promise<string> {
         const passiveContext = await ContextEngine.getPassiveContext(true);
         const rerouteMarker = '[LATTICE_REROUTE: LANE_2]';
+        
         const systemInstruction = `You are Lattice, an expert AI assistant. Answer the user's question clearly and concisely.
+You have access to read-only project fetching tools (list_directory_tree, read_file_chunk, search_workspace_regex). Use them if you need to gather details about the project to answer the user's question accurately. Do not modify files.
 
-Hard rule: You are in a Chat-Only interface with no tools. If the user explicitly asks you to read, edit, search, run terminal commands, or answer a code/file question about "this file", "current file", "active file", "open file", "here", "this", "above", or "below", you must respond with EXACTLY this string and nothing else: ${rerouteMarker}
+Hard rule: If the user explicitly asks you to edit files, rewrite code, or run terminal commands, you must respond with EXACTLY this string and nothing else: ${rerouteMarker}
 
 ${passiveContext}`;
-        const request = {
-            prompt,
-            model,
-            workspace: this.workspacePath,
-            tool_history: [],
-            chat_history: this.chatHistory,
-            disableTools: true
-        };
-        const response = await ModelFactory.generateWithFallback(request, systemInstruction);
-        if (response.type !== 'message') {
-            return "Error in chat flow.";
-        }
 
-        if (response.content.includes(rerouteMarker)) {
-            this.ui.addStep('🔀', 'Rerouting', 'Lane 2 tool execution');
-            const reroutePlan = `Answer the user's request using Lane 2 capabilities.
+        let isDone = false;
+        let currentPrompt = prompt;
+        const allowedTools = ['list_directory_tree', 'read_file_chunk', 'search_workspace_regex'];
+
+        while (!isDone) {
+            let request: ChatRequest = {
+                prompt: currentPrompt,
+                model,
+                workspace: this.workspacePath,
+                tool_history: this.toolHistory,
+                chat_history: this.chatHistory,
+                disableTools: false,
+                allowedTools
+            };
+
+            request = ContextEngine.pruneContext(request);
+            this.ui.setLoading("Thinking...");
+            let response = await ModelFactory.generateWithFallback(request, systemInstruction);
+
+            if (response.type === 'message') {
+                response = this.tryParseInlineToolCall(response.content) || response;
+            }
+
+            if (response.type === 'tool_call') {
+                const toolName = response.tool_name;
+                const toolArgs = response.arguments;
+                const targetPath = toolArgs.relative_path || '';
+                let toolResultContent = '';
+
+                this.ui.removeLoading();
+
+                // Safety guard: if model tries to bypass and call edit/terminal tools, trigger rerouting immediately
+                if (!allowedTools.includes(toolName)) {
+                    this.ui.addStep('🔀', 'Rerouting', 'Lane 2 tool execution');
+                    const reroutePlan = `Answer the user's request using Lane 2 capabilities.
 
 Original Request: ${prompt}
 
@@ -279,14 +301,57 @@ Rules:
 - If more context is needed from the active file, prefer read_file_chunk with the active file path and relevant line range.
 - If searching is needed, ONLY use search_workspace_regex with SIMPLE, PLAIN-TEXT patterns: "server", "url", "localhost", "http", "port", or "endpoint"
   - NEVER use regex escapes or backslashes
-  - NEVER use patterns with \, $, ^, *, +, ?, [, ] characters
+  - NEVER use patterns with \\, $, ^, *, +, ?, [, ] characters
 - search_workspace_regex returns matching file paths, line numbers, and line snippets. If a search result directly answers the question, answer from that result instead of continuing to search.
 - When you have the answer, respond as normal plain text. Do not call tools named print, final, answer, or respond.
 - Do not edit files unless the user explicitly asked for an edit.`;
-            return await this.runExecutionFlow(prompt, reroutePlan, model);
-        }
+                    return await this.runExecutionFlow(prompt, reroutePlan, model);
+                }
 
-        return response.content;
+                this.updateUIStep(toolName, targetPath, toolArgs.query || toolArgs.pattern);
+                this.ui.setLoading(`Executing ${toolName}...`);
+
+                try {
+                    if (toolName === 'read_file_chunk') {
+                        toolResultContent = await FileSystemTools.readFileChunk(this.workspacePath, targetPath, toolArgs.start_line, toolArgs.end_line);
+                    } else if (toolName === 'list_directory_tree') {
+                        toolResultContent = await FileSystemTools.listDirectoryTree(this.workspacePath, targetPath, toolArgs.depth);
+                    } else if (toolName === 'search_workspace_regex') {
+                        const searchPath = toolArgs.relative_path;
+                        toolResultContent = await FileSystemTools.searchWorkspaceRegex(toolArgs.pattern, searchPath);
+                    }
+                } catch (err: any) {
+                    toolResultContent = `Error executing ${toolName}: ${err.message}`;
+                }
+
+                this.toolHistory.push({ tool_name: toolName, content: toolResultContent, arguments: toolArgs });
+                this.consecutiveToolCalls++;
+                if (this.consecutiveToolCalls > this.MAX_CONSECUTIVE_TOOLS) {
+                    return "Maximum tool calls exceeded. Stopping to prevent loop.";
+                }
+            } else {
+                if (response.content.includes(rerouteMarker)) {
+                    this.ui.addStep('🔀', 'Rerouting', 'Lane 2 tool execution');
+                    const reroutePlan = `Answer the user's request using Lane 2 capabilities.
+
+Original Request: ${prompt}
+
+Rules:
+- This may be an information request, not an edit request.
+- If the answer is visible in the active-file context, answer directly without calling tools.
+- If more context is needed from the active file, prefer read_file_chunk with the active file path and relevant line range.
+- If searching is needed, ONLY use search_workspace_regex with SIMPLE, PLAIN-TEXT patterns: "server", "url", "localhost", "http", "port", or "endpoint"
+  - NEVER use regex escapes or backslashes
+  - NEVER use patterns with \\, $, ^, *, +, ?, [, ] characters
+- search_workspace_regex returns matching file paths, line numbers, and line snippets. If a search result directly answers the question, answer from that result instead of continuing to search.
+- When you have the answer, respond as normal plain text. Do not call tools named print, final, answer, or respond.
+- Do not edit files unless the user explicitly asked for an edit.`;
+                    return await this.runExecutionFlow(prompt, reroutePlan, model);
+                }
+                return response.content;
+            }
+        }
+        return "Implementation completed.";
     }
 
     private async generatePlan(prompt: string, model: string): Promise<string> {
