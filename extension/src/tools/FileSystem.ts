@@ -8,11 +8,15 @@ export class FileSystemTools {
         const targetUri = vscode.Uri.file(absolutePath);
         
         async function scan(uri: vscode.Uri, currentDepth: number): Promise<any> {
-            if (currentDepth > depth) return "...";
+            if (currentDepth > Math.min(depth, 3)) return "..."; // Hard cap depth at 3
             try {
                 const entries = await vscode.workspace.fs.readDirectory(uri);
                 const result: any = {};
                 for (const [name, type] of entries) {
+                    // Ignore common large folders
+                    if (['node_modules', '.git', 'dist', 'build', '.gemini'].includes(name)) {
+                        continue;
+                    }
                     if (type === vscode.FileType.Directory) {
                         result[name] = await scan(vscode.Uri.joinPath(uri, name), currentDepth + 1);
                     } else {
