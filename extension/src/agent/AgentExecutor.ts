@@ -316,6 +316,8 @@ Rules:
                 this.updateUIStep(toolName, targetPath, toolArgs.query || toolArgs.pattern);
                 this.ui.setLoading(`Executing ${toolName}...`);
 
+                console.log(`[Lattice AgentExecutor] [Lane 1] Executing tool "${toolName}" with arguments:`, JSON.stringify(toolArgs, null, 2));
+
                 try {
                     if (toolName === 'read_file_chunk') {
                         toolResultContent = await FileSystemTools.readFileChunk(this.workspacePath, targetPath, toolArgs.start_line, toolArgs.end_line);
@@ -328,6 +330,8 @@ Rules:
                 } catch (err: any) {
                     toolResultContent = `Error executing ${toolName}: ${err.message}`;
                 }
+
+                console.log(`[Lattice AgentExecutor] [Lane 1] Tool "${toolName}" returned:`, toolResultContent);
 
                 this.toolHistory.push({ tool_name: toolName, content: toolResultContent, arguments: toolArgs });
                 this.consecutiveToolCalls++;
@@ -447,6 +451,8 @@ ${passiveContext}`;
                 this.updateUIStep(toolName, targetPath, toolArgs.query || toolArgs.pattern);
                 this.ui.setLoading(`Executing ${toolName}...`);
 
+                console.log(`[Lattice AgentExecutor] [Lane 2] Executing tool "${toolName}" with arguments:`, JSON.stringify(toolArgs, null, 2));
+
                 try {
                     if (toolName === 'read_file_chunk') {
                         toolResultContent = await FileSystemTools.readFileChunk(this.workspacePath, targetPath, toolArgs.start_line, toolArgs.end_line);
@@ -490,6 +496,8 @@ ${passiveContext}`;
                 } catch (err: any) {
                     toolResultContent = `Error executing ${toolName}: ${err.message}`;
                 }
+
+                console.log(`[Lattice AgentExecutor] [Lane 2] Tool "${toolName}" returned:`, toolResultContent);
 
                 this.toolHistory.push({ tool_name: toolName, content: toolResultContent, arguments: toolArgs });
                 this.consecutiveToolCalls++;
