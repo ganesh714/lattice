@@ -16,6 +16,7 @@ export interface IAgentUI {
     askApproval(target: string, oldText: string, newText: string): Promise<boolean>;
     askPlanApproval(plan: string): Promise<boolean>;
     statusUpdate?(text: string): void;
+    addMessage?(text: string, isUser: boolean): void;
 }
 
 export class AgentExecutor {
@@ -41,7 +42,7 @@ export class AgentExecutor {
         } else {
             this.ui.setLoading("Classifying intent...");
             this.ui.statusUpdate?.('Routing intent (L0)...');
-            intent = await Router.classify(prompt, history);
+            intent = await Router.classify(prompt, history, model);
             this.ui.addStep('🧠', 'Routing', intent === 'code_edit' ? 'Work Path (Code Edit)' : 'Chat Path');
         }
 

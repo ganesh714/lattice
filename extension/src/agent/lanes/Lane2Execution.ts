@@ -42,6 +42,10 @@ export class Lane2Execution implements ILaneStrategy {
         let plan = await this.generatePlan(prompt, planModel, history);
         this.ui.addStep('📝', 'Planning', 'Drafting implementation steps');
 
+        if (this.ui.addMessage) {
+            this.ui.addMessage("### Drafted Implementation Plan\n\n" + plan, false);
+        }
+
         this.ui.setLoading("Reviewing plan...");
         this.ui.statusUpdate?.('Reviewing plan (L2 Critic)...');
         const review = await Critic.reviewPlan(prompt, plan, history, criticModel);

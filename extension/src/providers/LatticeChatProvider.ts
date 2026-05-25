@@ -70,6 +70,10 @@ export class LatticeChatProvider implements vscode.WebviewViewProvider, IAgentUI
         this._view?.webview.postMessage({ type: 'statusUpdate', value: text });
     }
 
+    addMessage(text: string, isUser: boolean = false) {
+        this._view?.webview.postMessage({ type: 'addMessage', text, isUser });
+    }
+
     sendMcpStatusUpdate() {
         const statuses = McpClient.getServersStatus();
         this._view?.webview.postMessage({ type: 'mcpStatusUpdate', servers: statuses });
