@@ -14,7 +14,7 @@ export class Router {
         if (intent === 'code_edit') {
             const systemInstruction = `
                 Analyze if the user's request involves:
-                1. Creating a new project or scaffolding an app from scratch
+                1. Creating a new project or scaffolding an app from scratch (e.g., "create a react project", "make a new frontend")
                 2. Massive architectural refactoring
                 3. High-risk system commands
 

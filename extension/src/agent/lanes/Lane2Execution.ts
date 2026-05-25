@@ -53,7 +53,19 @@ Once you have explored enough and are ready, output your final implementation pl
 ${passiveContext}`;
 
             this.ui.setLoading("Exploring project...");
-            let data: AIResponse = await ModelFactory.generateWithFallback(request, systemInstruction);
+            let data: AIResponse;
+            try {
+                data = await ModelFactory.generateWithFallback(request, systemInstruction);
+            } catch (e: any) {
+                toolHistory.push({
+                    tool_name: 'system_error',
+                    content: `API Error: ${e.message}\nYou likely provided invalid JSON arguments to a tool or hallucinated a tool call. Please fix your tool arguments according to the schema and try again.`,
+                    arguments: {}
+                });
+                consecutiveToolCalls++;
+                continue;
+            }
+
             if (data.type === 'message') {
                 data = this.tryParseInlineToolCall(data.content) || data;
             }
@@ -178,7 +190,19 @@ WHEN USING search_workspace_regex:
 ${passiveContext}`;
 
             this.ui.setLoading("Thinking...");
-            let data: AIResponse = await ModelFactory.generateWithFallback(request, systemInstruction);
+            let data: AIResponse;
+            try {
+                data = await ModelFactory.generateWithFallback(request, systemInstruction);
+            } catch (e: any) {
+                existingToolHistory.push({
+                    tool_name: 'system_error',
+                    content: `API Error: ${e.message}\nYou likely provided invalid JSON arguments to a tool or hallucinated a tool call. Please fix your tool arguments according to the schema and try again.`,
+                    arguments: {}
+                });
+                consecutiveToolCalls++;
+                continue;
+            }
+
             if (data.type === 'message') {
                 data = this.tryParseInlineToolCall(data.content) || data;
             }
