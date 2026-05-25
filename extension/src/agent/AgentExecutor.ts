@@ -43,7 +43,10 @@ export class AgentExecutor {
             this.ui.setLoading("Classifying intent...");
             this.ui.statusUpdate?.('Routing intent (L0)...');
             intent = await Router.classify(prompt, history, model);
-            this.ui.addStep('🧠', 'Routing', intent === 'code_edit' ? 'Work Path (Code Edit)' : 'Chat Path');
+            let intentStr = 'Chat Path (Lane 1)';
+            if (intent === 'code_edit') intentStr = 'Work Path (Lane 2)';
+            else if (intent === 'LANE_3') intentStr = 'Risky Path (Lane 3)';
+            this.ui.addStep('🧠', 'Routing', intentStr);
         }
 
         // Initialize Strategies

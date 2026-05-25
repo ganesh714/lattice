@@ -120,7 +120,7 @@ ${passiveContext}`;
                 let toolResultContent = '';
 
                 this.ui.removeLoading();
-                this.updateUIStep(toolName, targetPath, toolArgs.query || toolArgs.pattern);
+                this.updateUIStep(toolName, targetPath, toolArgs.query || toolArgs.pattern || toolArgs.command);
                 this.ui.setLoading(`Executing ${toolName}...`);
 
                 console.log(`[Lattice AgentExecutor] [Lane 2] Executing tool "${toolName}" with arguments:`, JSON.stringify(toolArgs, null, 2));
