@@ -29,11 +29,81 @@ export class Lane2Execution implements ILaneStrategy {
     }
 
     private async generatePlan(prompt: string, model: string, history: ChatMessage[]): Promise<string> {
-        const passiveContext = await ContextEngine.getPassiveContext(false);
-        const systemInstruction = `Create a detailed step-by-step plan to implement the user's request. Do not call tools yet. Be specific about which files will be modified. ${passiveContext}`;
-        const request = { prompt, model, workspace: this.workspacePath, tool_history: [], chat_history: history, disableTools: true };
-        const response = await ModelFactory.generateWithFallback(request, systemInstruction);
-        return response.type === 'message' ? response.content : "Failed to generate plan.";
+        let isDone = false;
+        let currentPrompt = `User Request: ${prompt}`;
+        let consecutiveToolCalls = 0;
+        let toolHistory: ToolResponse[] = [];
+
+        while (!isDone) {
+            let request: ChatRequest = {
+                prompt: currentPrompt,
+                model: model,
+                workspace: this.workspacePath,
+                tool_history: toolHistory,
+                chat_history: history,
+                disableTools: false
+            };
+
+            request = ContextEngine.pruneContext(request);
+            const passiveContext = await ContextEngine.getPassiveContext(false);
+            const systemInstruction = `You are Lattice. Your current objective is to output a detailed step-by-step implementation plan.
+You have access to tools. USE read_file_chunk, list_directory_tree, and search_workspace_regex to explore the codebase to understand what needs to be changed before planning.
+DO NOT use edit_file_diff or execute_command during the planning phase.
+Once you have explored enough and are ready, output your final implementation plan wrapped in <FINAL_PLAN>...</FINAL_PLAN> tags.
+${passiveContext}`;
+
+            this.ui.setLoading("Exploring project...");
+            let data: AIResponse = await ModelFactory.generateWithFallback(request, systemInstruction);
+            if (data.type === 'message') {
+                data = this.tryParseInlineToolCall(data.content) || data;
+            }
+
+            if (data.type === 'tool_call') {
+                const toolName = data.tool_name;
+                if (toolName === 'edit_file_diff' || toolName === 'execute_command') {
+                    toolHistory.push({ tool_name: toolName, content: `Error: You cannot use ${toolName} during the planning phase. Please output your <FINAL_PLAN> first.`, arguments: data.arguments || {} });
+                    continue;
+                }
+
+                const toolArgs = data.arguments;
+                const targetPath = toolArgs.relative_path || '';
+                let toolResultContent = '';
+
+                this.ui.removeLoading();
+                this.updateUIStep(toolName, targetPath, toolArgs.query || toolArgs.pattern || toolArgs.command);
+                this.ui.setLoading(`Executing ${toolName}...`);
+
+                try {
+                    if (toolName === 'read_file_chunk') {
+                        toolResultContent = await FileSystemTools.readFileChunk(this.workspacePath, targetPath, toolArgs.start_line, toolArgs.end_line);
+                    } else if (toolName === 'list_directory_tree') {
+                        toolResultContent = await FileSystemTools.listDirectoryTree(this.workspacePath, targetPath, toolArgs.depth);
+                    } else if (toolName === 'search_workspace_regex') {
+                        const searchPath = this.needsActiveFileContext(prompt)
+                            ? (toolArgs.relative_path || this.getActiveFileRelativePath())
+                            : toolArgs.relative_path;
+                        toolResultContent = await FileSystemTools.searchWorkspaceRegex(toolArgs.pattern, searchPath);
+                    } else {
+                        toolResultContent = `Error: Tool ${toolName} is not permitted during planning.`;
+                    }
+                } catch (err: any) {
+                    toolResultContent = `Error executing ${toolName}: ${err.message}`;
+                }
+
+                toolHistory.push({ tool_name: toolName, content: toolResultContent, arguments: toolArgs });
+                consecutiveToolCalls++;
+                if (consecutiveToolCalls > this.MAX_CONSECUTIVE_TOOLS) {
+                    return "Error: Exceeded max exploratory tool calls. Please refine the request.";
+                }
+            } else {
+                const match = data.content.match(/<FINAL_PLAN>([\s\S]*?)<\/FINAL_PLAN>/);
+                if (match) {
+                    return match[1].trim();
+                }
+                return data.content;
+            }
+        }
+        return "Failed to generate plan.";
     }
 
     public async createReviewedPlan(prompt: string, history: ChatMessage[], planModel: string, criticModel: string): Promise<string> {
