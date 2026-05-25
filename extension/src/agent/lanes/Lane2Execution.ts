@@ -48,6 +48,7 @@ export class Lane2Execution implements ILaneStrategy {
             const passiveContext = await ContextEngine.getPassiveContext(false);
             const systemInstruction = `You are Lattice. Your current objective is to output a detailed step-by-step implementation plan.
 You have access to tools. USE read_file_chunk, list_directory_tree, and search_workspace_regex to explore the codebase to understand what needs to be changed before planning.
+CRITICAL: Always run list_directory_tree on the root directory (relative_path: ".") FIRST to see what actually exists. Do not guess or hallucinate directory names like "components" or "src" without verifying they exist first!
 DO NOT use edit_file_diff or execute_command during the planning phase.
 Once you have explored enough and are ready, output your final implementation plan wrapped in <FINAL_PLAN>...</FINAL_PLAN> tags.
 ${passiveContext}`;
@@ -59,7 +60,7 @@ ${passiveContext}`;
             } catch (e: any) {
                 toolHistory.push({
                     tool_name: 'system_error',
-                    content: `API Error: ${e.message}\nYou likely provided invalid JSON arguments to a tool or hallucinated a tool call. Please fix your tool arguments according to the schema and try again.`,
+                    content: `API Error: ${e.message}\nYou likely provided invalid JSON arguments to a tool. Remember, list_directory_tree requires a "relative_path" argument. Please fix your tool formatting and try again.`,
                     arguments: {}
                 });
                 consecutiveToolCalls++;
@@ -176,6 +177,7 @@ ${passiveContext}`;
             const systemInstruction = `You are Lattice. Execute the implementation plan surgically.
 
 You only have partial visibility into the user's active file to save memory. If you need to understand the full structure or find specific variables, you MUST use the search_workspace_regex or read_file_chunk tools before attempting an edit.
+CRITICAL: If you need to explore directories, run list_directory_tree on the root directory (relative_path: ".") FIRST to see what actually exists. Do not guess or hallucinate directory names.
 
 For information requests, answer directly when the visible active-file context contains the answer. If you need tools for an information request, prefer read_file_chunk for the active file. 
 
