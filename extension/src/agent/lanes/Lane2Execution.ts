@@ -31,7 +31,7 @@ export class Lane2Execution implements ILaneStrategy {
     private async generatePlan(prompt: string, model: string, history: ChatMessage[]): Promise<string> {
         const passiveContext = await ContextEngine.getPassiveContext(false);
         const systemInstruction = `Create a detailed step-by-step plan to implement the user's request. Do not call tools yet. Be specific about which files will be modified. ${passiveContext}`;
-        const request = { prompt, model, workspace: this.workspacePath, tool_history: [], chat_history: history };
+        const request = { prompt, model, workspace: this.workspacePath, tool_history: [], chat_history: history, disableTools: true };
         const response = await ModelFactory.generateWithFallback(request, systemInstruction);
         return response.type === 'message' ? response.content : "Failed to generate plan.";
     }

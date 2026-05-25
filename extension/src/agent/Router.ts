@@ -25,7 +25,8 @@ export class Router {
                 model: model, 
                 workspace: '',
                 tool_history: [],
-                chat_history: []
+                chat_history: [],
+                disableTools: true
             };
 
             try {
