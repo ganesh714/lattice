@@ -101,7 +101,25 @@ export class ContextEngine {
         }
 
         const workspacePath = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || 'Unknown';
-        return `Current Workspace: ${workspacePath}${context}\n\nGeneral Instruction: Please follow SOLID principles and maintain consistent indentation.`;
+        
+        // 3. Shallow Directory Tree for architectural context
+        let treeContext = '';
+        if (workspacePath !== 'Unknown') {
+            try {
+                const fs = require('fs');
+                const path = require('path');
+                const items = fs.readdirSync(workspacePath, { withFileTypes: true });
+                const relevant = items
+                    .filter((item: any) => !item.name.startsWith('.') && item.name !== 'node_modules' && item.name !== 'dist' && item.name !== 'out')
+                    .map((item: any) => (item.isDirectory() ? `📁 ${item.name}/` : `📄 ${item.name}`))
+                    .join('\n');
+                treeContext = `\n[Project Root Directory Structure]:\n${relevant}\n`;
+            } catch (e) {
+                // Ignore read errors
+            }
+        }
+
+        return `Current Workspace: ${workspacePath}${treeContext}${context}\n\nGeneral Instruction: Please follow SOLID principles and maintain consistent indentation.`;
     }
 
     private static getDocumentLines(doc: vscode.TextDocument, startLine: number, endLine: number): string {
