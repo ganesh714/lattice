@@ -48,9 +48,13 @@ export class Lane2Execution implements ILaneStrategy {
             const passiveContext = await ContextEngine.getPassiveContext(false);
             const systemInstruction = `You are Lattice. Your current objective is to output a detailed step-by-step implementation plan.
 You have access to tools. USE read_file_chunk, list_directory_tree, and search_workspace_regex to explore the codebase to understand what needs to be changed before planning.
-CRITICAL: Always run list_directory_tree on the root directory (relative_path: ".") FIRST to see what actually exists. Do not guess or hallucinate directory names like "components" or "src" without verifying they exist first!
-CRITICAL: DO NOT guess or hallucinate file contents. If your plan involves modifying, analyzing, replicating, or depending on the contents of ANY existing files, you MUST use read_file_chunk to read those files FIRST. If a file is large, read it in chunks. You cannot plan accurately without seeing the actual code.
-DO NOT use edit_file_diff or execute_command during the planning phase.
+CRITICAL INSTRUCTIONS:
+1. Always run list_directory_tree on the root directory (relative_path: ".") FIRST to see what actually exists. Do not guess directory names.
+2. DO NOT guess or hallucinate file contents. If the user asks to replicate, modify, or depend on an existing file (like an HTML file), you MUST use read_file_chunk to read it line-by-line FIRST. You cannot plan accurately without seeing the actual code!
+3. Call your tools natively. DO NOT write tool calls like <function=...> inside your text.
+4. DO NOT output your <FINAL_PLAN> until you have fully read the necessary files.
+5. DO NOT use edit_file_diff or execute_command during the planning phase.
+
 Once you have explored enough and are ready, output your final implementation plan wrapped in <FINAL_PLAN>...</FINAL_PLAN> tags.
 ${passiveContext}`;
 
