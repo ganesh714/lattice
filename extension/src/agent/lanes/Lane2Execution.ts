@@ -308,6 +308,10 @@ ${passiveContext}`;
     }
 
     private tryParseInlineToolCall(content: string): AIResponse | null {
+        if (content.includes('<FINAL_PLAN>')) {
+            return null; // Do not intercept if it's already outputting the final plan
+        }
+
         const matches = content.match(/\{[^{}]*(?:"pattern"|"relative_path")[^{}]*\}/g);
         if (!matches) {
             return null;
