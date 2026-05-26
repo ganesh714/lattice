@@ -18,17 +18,17 @@
  *   #4 (Blind Agent 1)      — TaskDecomposer gives Agent 1 a structured search plan
  */
 
-import { ILaneStrategy } from '../ILaneStrategy';
-import { ChatMessage } from '../../../types/schemas';
-import { IAgentUI } from '../../AgentExecutor';
-import { Lane2Execution } from '../Lane2Execution';
+import { ILaneStrategy } from './ILaneStrategy';
+import { ChatMessage } from '../../types/schemas';
+import { IAgentUI } from '../AgentExecutor';
+import { Lane2Execution } from './Lane2Execution';
 
-import { TaskDecomposer } from './TaskDecomposer';
-import { ContextReaderAgent } from './ContextReaderAgent';
-import { ArchExtractorAgent } from './ArchExtractorAgent';
-import { PlannerAgent } from './PlannerAgent';
-import { CriticAgent } from './CriticAgent';
-import { SharedContextBundle } from './types';
+import { TaskDecomposer } from './lane3/TaskDecomposer';
+import { ContextReaderAgent } from './lane3/ContextReaderAgent';
+import { ArchExtractorAgent } from './lane3/ArchExtractorAgent';
+import { PlannerAgent } from './lane3/PlannerAgent';
+import { CriticAgent } from './lane3/CriticAgent';
+import { SharedContextBundle } from './lane3/types';
 
 export class Lane3Risky implements ILaneStrategy {
     constructor(
