@@ -24,8 +24,11 @@ export class FileSystemTools {
                     }
                 }
                 return result;
-            } catch (e) {
-                return "[Error reading directory]";
+            } catch (e: any) {
+                if (e.message?.includes('ENOENT') || e.code === 'FileNotFound') {
+                    return `[Directory does not exist: ${uri.fsPath}. You may need to create it.]`;
+                }
+                return `[Error reading directory: ${e.message}]`;
             }
         }
 
