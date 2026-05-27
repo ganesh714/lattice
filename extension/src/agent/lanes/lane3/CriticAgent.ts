@@ -1,65 +1,50 @@
 /**
- * Lane 3 — Agent 4: Critic (Automated Red Team Review)
+ * Lane 3 — Critic Agent (Automated Red Team Review)
  * 
- * Reviews the draft plan against the Architecture Map to verify:
- *   1. Correctness — Does the plan solve the user's request?
- *   2. SOLID Principles — Does it follow best practices?
- *   3. Safety — Does it avoid breaking existing functionality?
+ * Reviews the draft plan against the context summary collected during planning.
+ * The Critic receives:
+ *   1. The user's original request
+ *   2. The draft implementation plan
+ *   3. A context summary (files explored, key searches, reasoning) from the ReAct Planner
  * 
- * Fixes Issue #1 (Blind Critic): Receives BOTH the plan AND the Architecture Map
- * so it can verify that function names, interfaces, and imports are real.
- * 
- * Fixes Issue #3 (No Loop Limit): Max 2 retries before force-escalating to human.
+ * Max 2 retries before force-escalating to human.
  */
 
 import { ChatMessage, ChatRequest } from '../../../types/schemas';
 import { ModelFactory } from '../../../models/ModelFactory';
 import { IAgentUI } from '../../AgentExecutor';
-import { ArchitectureMap, CriticResult } from './types';
+import { CriticResult } from './types';
 
 export class CriticAgent {
     static readonly MAX_CRITIC_RETRIES = 2;
 
     /**
-     * Reviews a draft plan against the architecture map.
+     * Reviews a draft plan against the exploration context.
      * Returns whether the plan is approved and any feedback.
      */
     static async review(
         plan: string,
-        architectureMap: ArchitectureMap,
+        contextSummary: string,
         userPrompt: string,
         model: string,
         history: ChatMessage[],
         ui: IAgentUI
     ): Promise<CriticResult> {
-        ui.setLoading('Agent 4: Reviewing plan...');
-
-        // Serialize architecture map for the Critic
-        const archSummary = architectureMap.files.map(f => {
-            const parts = [`File: ${f.filePath}`];
-            if (f.exports.length > 0) { parts.push(`  Exports: ${f.exports.join(', ')}`); }
-            if (f.interfaces.length > 0) { parts.push(`  Interfaces: ${f.interfaces.join('; ')}`); }
-            if (f.keyVariables.length > 0) { parts.push(`  Vars: ${f.keyVariables.join(', ')}`); }
-            return parts.join('\n');
-        }).join('\n\n');
-
-        const depsText = architectureMap.dependencies.length > 0
-            ? `\nDependency Chains: ${architectureMap.dependencies.join(', ')}`
-            : '';
+        ui.setLoading('Critic: Reviewing plan...');
 
         const systemInstruction = `You are a Senior Software Architect performing a Red Team review of an implementation plan.
 
 You have been given:
 1. The user's original request
 2. The draft implementation plan
-3. The verified Architecture Map (exact exports, imports, interfaces from the actual codebase)
+3. A context summary showing which files were explored, key search results, and the planner's reasoning
 
 REVIEW CHECKLIST:
 1. **Correctness**: Does the plan actually solve the user's request? Are there missing steps?
-2. **Code Accuracy**: Does the plan reference REAL function names, class names, and file paths from the Architecture Map? Flag any names that do NOT appear in the Architecture Map — they are likely hallucinated.
-3. **SOLID Principles**: Does the plan follow Single Responsibility, Open/Closed, etc.?
-4. **Safety**: Could any step break existing functionality? Are there missing rollback or error-handling steps?
-5. **Completeness**: Are all necessary files covered? Does the plan miss any imports or dependency updates?
+2. **Code Accuracy**: Does the plan reference specific file paths and identifiers that were actually found during exploration? Flag any names that appear to be hallucinated (not mentioned in the context summary).
+3. **Completeness**: Did the planner explore enough of the codebase? Are there obvious files or directories that should have been read but weren't?
+4. **Safety**: Could any step break existing functionality? Are there missing error-handling or rollback steps?
+5. **Order of Operations**: Are the steps in the right order? Are dependencies handled correctly?
 
 OUTPUT FORMAT (JSON only, no markdown):
 {
@@ -68,9 +53,9 @@ OUTPUT FORMAT (JSON only, no markdown):
 }
 
 RULES:
-- Be strict. If the plan references a function name that doesn't exist in the Architecture Map, REJECT.
-- If the plan is missing error handling for a critical operation, REJECT.
-- If the plan is solid, APPROVE with a brief confirmation.
+- Be strict but fair. Only REJECT if there are concrete, actionable issues.
+- If the plan references files or functions not mentioned in the context summary, flag them as potentially hallucinated.
+- If the plan is missing critical steps, explain exactly what's missing.
 - Output ONLY the JSON object.`;
 
         const request: ChatRequest = {
@@ -79,9 +64,8 @@ RULES:
 ## Draft Plan
 ${plan}
 
-## Architecture Map (Verified from Codebase)
-${archSummary}
-${depsText}`,
+## Exploration Context (What the planner actually discovered)
+${contextSummary}`,
             model: model,
             workspace: '',
             tool_history: [],
