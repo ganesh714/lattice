@@ -95,10 +95,21 @@ export class GeminiClient implements IAIProvider {
             const functionCalls = response.functionCalls();
             if (functionCalls && functionCalls.length > 0) {
                 const call = functionCalls[0];
+                // Capture any text/reasoning the model output alongside the tool call
+                let reasoning: string | undefined;
+                try {
+                    const textContent = response.text();
+                    if (textContent && textContent.trim()) {
+                        reasoning = textContent.trim();
+                    }
+                } catch (_) {
+                    // response.text() throws if there are no text parts — that's fine
+                }
                 return {
                     type: "tool_call",
                     tool_name: call.name,
-                    arguments: call.args as Record<string, any>
+                    arguments: call.args as Record<string, any>,
+                    reasoning
                 };
             }
 
