@@ -17,6 +17,7 @@ export interface IAgentUI {
     askPlanApproval(plan: string): Promise<boolean>;
     statusUpdate?(text: string): void;
     addMessage?(text: string, isUser: boolean): void;
+    isCancelled?: () => boolean;
 }
 
 export class AgentExecutor {

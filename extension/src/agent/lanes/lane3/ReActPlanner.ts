@@ -79,6 +79,9 @@ Follow this exact sequence. Do NOT skip levels or jump ahead.
         let currentPrompt = `User Request: ${prompt}${feedbackSection}\n\n${passiveContext}`;
 
         while (!isDone) {
+            if (ui.isCancelled?.()) {
+                throw new Error('Generation aborted by user.');
+            }
             const request: ChatRequest = {
                 prompt: currentPrompt,
                 model: model,

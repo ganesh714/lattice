@@ -17,6 +17,7 @@ export class LatticeChatProvider implements vscode.WebviewViewProvider, IAgentUI
     private _diffProviderRegistration?: vscode.Disposable;
     private _pendingDiffUris = new Map<string, string>();
     private _debugInterval?: NodeJS.Timeout;
+    private _isCancelled = false;
     
     // Settings storage
     private _settings: {
@@ -81,6 +82,10 @@ export class LatticeChatProvider implements vscode.WebviewViewProvider, IAgentUI
 
     getSettings() {
         return this._settings;
+    }
+
+    isCancelled() {
+        return this._isCancelled;
     }
 
     async askApproval(target: string, oldText: string, newText: string): Promise<boolean> {
@@ -262,6 +267,9 @@ export class LatticeChatProvider implements vscode.WebviewViewProvider, IAgentUI
                     console.error(`[Lattice] Failed to remove MCP server:`, e);
                     vscode.window.showErrorMessage(`Failed to remove MCP server: ${e.message}`);
                 }
+            } else if (message.type === 'abortGeneration') {
+                this._isCancelled = true;
+                console.log('[Lattice] User requested generation abort');
             }
         });
 
@@ -281,6 +289,8 @@ export class LatticeChatProvider implements vscode.WebviewViewProvider, IAgentUI
 
     private async handlePrompt(prompt: string, model: string) {
         if (!this._view) return;
+
+        this._isCancelled = false; // Reset cancellation flag for new prompt
 
         // Use the persistent executor if available
         const executor = this._executor || new AgentExecutor(this, vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || '');

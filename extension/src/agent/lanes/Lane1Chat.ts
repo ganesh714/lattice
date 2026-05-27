@@ -169,6 +169,9 @@ ${passiveContext}`;
         const allowedTools = ['list_directory_tree', 'read_file_chunk', 'search_workspace_regex'];
 
         while (!isDone) {
+            if (this.ui.isCancelled?.()) {
+                throw new Error('Generation aborted by user.');
+            }
             let request: ChatRequest = {
                 prompt: currentPrompt,
                 model,

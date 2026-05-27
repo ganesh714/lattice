@@ -35,6 +35,9 @@ export class Lane2Execution implements ILaneStrategy {
         let toolHistory: ToolResponse[] = [];
 
         while (!isDone) {
+            if (this.ui.isCancelled?.()) {
+                throw new Error('Generation aborted by user.');
+            }
             let request: ChatRequest = {
                 prompt: currentPrompt,
                 model: model,
@@ -169,6 +172,9 @@ ${passiveContext}`;
         let consecutiveToolCalls = 0;
 
         while (!isDone) {
+            if (this.ui.isCancelled?.()) {
+                throw new Error('Generation aborted by user.');
+            }
             let request: ChatRequest = {
                 prompt: currentPrompt,
                 model: model,
