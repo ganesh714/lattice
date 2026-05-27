@@ -92,10 +92,13 @@ export class GroqClient implements IAIProvider {
 
         if (responseMessage.tool_calls && responseMessage.tool_calls.length > 0) {
             const call = responseMessage.tool_calls[0].function;
+            // Capture any reasoning text the model output alongside the tool call
+            const reasoning = responseMessage.content?.trim() || undefined;
             return {
                 type: "tool_call",
                 tool_name: call.name,
-                arguments: JSON.parse(call.arguments)
+                arguments: JSON.parse(call.arguments),
+                reasoning
             };
         }
 
