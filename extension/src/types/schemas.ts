@@ -23,6 +23,8 @@ export interface ToolCall {
     type: 'tool_call';
     tool_name: string;
     arguments: Record<string, any>;
+    /** Optional reasoning/thinking text the model output alongside the tool call */
+    reasoning?: string;
 }
 
 export interface TextResponse {
