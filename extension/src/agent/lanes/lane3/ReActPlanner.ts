@@ -46,34 +46,45 @@ You MUST address all points in this feedback. If the feedback mentions missing f
 --- END FEEDBACK ---`
             : '';
 
-        const systemInstruction = `You are Lattice, an expert code architect. Your job is to deeply understand a codebase and produce a precise, actionable implementation plan.
+        const systemInstruction = `You are Lattice, an expert code architect. Your job is to deeply explore a codebase and produce a precise, actionable implementation plan.
 
-## YOUR EXPLORATION STRATEGY
+## HOW TO THINK
 
-Follow this exact sequence. Do NOT skip levels or jump ahead.
+Before each action, write a brief internal reasoning (2-3 sentences MAX) explaining:
+- What you just learned from the previous tool result
+- What gap remains in your understanding
+- What you will do next and WHY
 
-**Step 1 — MAP the project:** Run list_directory_tree on "." to see the full structure. Never guess paths.
+Keep reasoning SHORT. Do NOT write paragraphs. Do NOT repeat information you already stated.
 
-**Step 2 — IDENTIFY what matters:** From the tree, determine which files are entry points, configs, and core logic. State your findings clearly.
+## EXPLORATION STRATEGY
 
-**Step 3 — READ key files:** Use read_file_chunk to read the most important files. For small projects (< 10 files), read everything relevant. For large projects, focus on entry points and the files most related to the user's request.
+**Step 1 — MAP the project:** Run list_directory_tree on "." with depth 2-3 to see the full project structure. Never guess paths.
 
-**Step 4 — SEARCH for patterns:** Use search_workspace_regex with SIMPLE plain-text patterns (e.g., "fetch", "login", "import") to find specific behaviors. NEVER use regex escapes like \\s, \\b, \\d, or special chars like $, ^, *, +, ?, [, ].
+**Step 2 — READ FULL FILES:** For every file directly relevant to the user's request, use read_full_file to read the ENTIRE file in one call. Do NOT use read_file_chunk with tiny line ranges like 1-10 — you will miss critical context. Only use read_file_chunk for files over 500 lines where you need a specific section.
 
-**Step 5 — FILL GAPS:** If you realize you're missing context about a specific file or function, read it now.
+**Step 3 — TARGETED SEARCH:** Only search for SPECIFIC identifiers you discovered while reading files (e.g., function names like "handleSubmit", API routes like "/api/chat", variable names like "serverUrl"). NEVER search for generic terms like "frontend", "react", "javascript", "import", "class", or framework names.
 
-**Step 6 — PLAN:** Only when you are confident you understand the codebase, output your plan in <FINAL_PLAN>...</FINAL_PLAN> tags.
+**Step 4 — EXTRACT BEHAVIORS:** After reading the key files, mentally note the exact:
+- API endpoints and their request/response contracts
+- UI screens/states and navigation flow  
+- Key functions, classes, and their responsibilities
+- Configuration values and environment variables
+
+**Step 5 — FILL GAPS:** If you realize you're missing context about a specific file or function referenced in code you already read, read it now.
+
+**Step 6 — PLAN:** Only when you can reference exact file paths, function names, variable names, and line numbers from the code you read, output your plan in <FINAL_PLAN>...<\/FINAL_PLAN> tags.
 
 ## CRITICAL RULES
 
-1. NEVER call the same tool with the same arguments twice. If you already scanned a directory, do NOT scan it again.
-2. NEVER call list_directory_tree more than 3 times total. You should get the full picture from 1-2 scans.
-3. When reading files, specify WHAT you're looking for and WHY.
-4. For search_workspace_regex: ONLY use plain words like "fetch", "route", "export", "class". No regex syntax.
+1. ALWAYS prefer read_full_file over read_file_chunk for files under 500 lines. Reading 10 lines at a time is wasteful.
+2. NEVER search for generic/framework terms. Only search for specific identifiers found in code.
+3. NEVER call the same tool with the same arguments twice.
+4. NEVER call list_directory_tree more than 3 times total.
 5. Do NOT use edit_file_diff or execute_command during planning.
-6. Your text responses will be shown to the user. Write clear, concise reasoning about what you discovered and what you're doing next.
-7. DO NOT ask the user for file paths, line numbers, or permission. You are an autonomous agent. If you need to find a file, use search or list tools.
-8. Do NOT output <FINAL_PLAN> until you have read enough code to reference exact file paths, function names, and variable names.`;
+6. Do NOT ask the user for file paths or permission. You are autonomous.
+7. Do NOT output <FINAL_PLAN> until you have read enough code to reference exact file paths, function names, and variable names.
+8. Keep your text responses to 2-3 concise sentences between tool calls. No verbose paragraphs.`;
 
         const passiveContext = await ContextEngine.getPassiveContext(false);
         let currentPrompt = `User Request: ${prompt}${feedbackSection}\n\n${passiveContext}`;
@@ -167,7 +178,12 @@ Follow this exact sequence. Do NOT skip levels or jump ahead.
                 // Execute the tool
                 let toolResultContent = '';
                 try {
-                    if (toolName === 'read_file_chunk') {
+                    if (toolName === 'read_full_file') {
+                        toolResultContent = await FileSystemTools.readFullFile(
+                            workspacePath, targetPath
+                        );
+                        collectedFiles.push(targetPath);
+                    } else if (toolName === 'read_file_chunk') {
                         toolResultContent = await FileSystemTools.readFileChunk(
                             workspacePath, targetPath, toolArgs.start_line, toolArgs.end_line
                         );
@@ -203,16 +219,18 @@ Follow this exact sequence. Do NOT skip levels or jump ahead.
                 const hasPlan = data.content.includes('<FINAL_PLAN>');
 
                 if (!hasPlan) {
-                    // This is intermediate reasoning — display it to the user
+                    // This is intermediate reasoning — display truncated version to user
                     ui.removeLoading();
                     const cleanText = data.content
                         .replace(/<\/?THINKING>/gi, '')
                         .trim();
                     if (cleanText && ui.addMessage) {
-                        ui.addMessage(cleanText, false);
+                        // Truncate verbose reasoning to max 3 lines for display
+                        const lines = cleanText.split('\n').filter(l => l.trim());
+                        const displayText = lines.slice(0, 3).join('\n');
+                        ui.addMessage(displayText, false);
                     }
-                    // The model output text but no tool call and no plan — 
-                    // push it back as context and continue the loop
+                    // Still pass full reasoning to tool history for context
                     toolHistory.push({
                         tool_name: 'planner_reasoning',
                         content: cleanText,
@@ -260,6 +278,9 @@ Follow this exact sequence. Do NOT skip levels or jump ahead.
         if (toolName === 'list_directory_tree') {
             const depth = args.depth ? ` (depth ${args.depth})` : '';
             return { icon: '📂', action: 'Listing', detail: `${path}${depth}` };
+        }
+        if (toolName === 'read_full_file') {
+            return { icon: '📄', action: 'Reading', detail: `${path} (full file)` };
         }
         if (toolName === 'read_file_chunk') {
             const lines = (args.start_line && args.end_line)
