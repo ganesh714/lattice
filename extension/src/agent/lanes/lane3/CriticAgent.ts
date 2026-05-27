@@ -53,9 +53,17 @@ OUTPUT FORMAT (JSON only, no markdown):
 }
 
 RULES:
-- Be strict but fair. Only REJECT if there are concrete, actionable issues.
-- If the plan references files or functions not mentioned in the context summary, flag them as potentially hallucinated.
-- If the plan is missing critical steps, explain exactly what's missing.
+- ONLY reject if you find a SPECIFIC, CONCRETE issue:
+  • A file path referenced in the plan that does NOT appear in the context summary
+  • A function/variable name that appears hallucinated (not found in explored code)
+  • A missing critical step that would cause the implementation to fail
+  • Steps in the wrong order that would break dependencies
+- Do NOT reject for:
+  • "The plan could be more detailed" — that's what execution is for
+  • "The plan doesn't specify exact endpoints" — if the planner explored enough
+  • Subjective quality concerns about plan verbosity or structure
+  • Suggestions for improvement that aren't actual errors
+- When in doubt, APPROVE. The human will review next.
 - Output ONLY the JSON object.`;
 
         const request: ChatRequest = {
