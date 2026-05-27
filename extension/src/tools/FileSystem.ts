@@ -90,6 +90,26 @@ export class FileSystemTools {
         return matches.length > 0 ? matches.join('\n') : "No matches found.";
     }
 
+    static async readFullFile(workspacePath: string, relativePath: string): Promise<string> {
+        const absolutePath = path.isAbsolute(relativePath) ? relativePath : path.join(workspacePath, relativePath);
+        const targetUri = vscode.Uri.file(absolutePath);
+        const uint8Array = await vscode.workspace.fs.readFile(targetUri);
+        const content = new TextDecoder().decode(uint8Array);
+        const lines = content.split('\n');
+
+        // Safety cap at 500 lines
+        const maxLines = Math.min(lines.length, 500);
+        const result = lines
+            .slice(0, maxLines)
+            .map((line, index) => `${index + 1}: ${line}`)
+            .join('\n');
+
+        if (lines.length > 500) {
+            return result + `\n\n[File truncated at 500 lines. Total lines: ${lines.length}. Use read_file_chunk for specific sections.]`;
+        }
+        return result;
+    }
+
     static async applyEditDiff(workspacePath: string, relativePath: string, searchBlock: string, replaceBlock: string): Promise<boolean | string> {
         const absolutePath = path.isAbsolute(relativePath) ? relativePath : path.join(workspacePath, relativePath);
         const targetUri = vscode.Uri.file(absolutePath);
