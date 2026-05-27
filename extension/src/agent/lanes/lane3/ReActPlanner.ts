@@ -1,23 +1,15 @@
 /**
  * Lane 3 — ReAct Planner (Reason → Act → Observe loop)
  * 
- * Replaces the over-split Agent 1 + Agent 2 + Agent 3 pipeline with a single
- * intelligent agent that progressively deepens its understanding of the codebase
- * before drafting a plan — exactly how Codex/Cursor/Devin work.
+ * A single intelligent agent that progressively deepens its understanding
+ * of the codebase before drafting a plan — like Codex/Cursor/Devin.
  * 
- * The agent follows a 6-level progressive deepening strategy:
- *   Level 1: WIDE SCAN     → Project structure (ls, tree)
- *   Level 2: IDENTIFY       → Entry points, configs, key files
- *   Level 3: ASSESS SCOPE   → Read key files, understand scale
- *   Level 4: EXTRACT        → Targeted grep for behaviors, APIs, patterns
- *   Level 5: DEEP READ      → Fill remaining gaps
- *   Level 6: PLAN           → Draft implementation plan
- * 
- * Between each action, the agent MUST output <THINKING> blocks to reason about
- * what it learned and what it still needs — this prevents blind tool-calling.
- * 
- * On re-draft passes (Critic/Human feedback), the same agent can fetch
- * additional context using its tools.
+ * KEY FEATURES:
+ * - Displays reasoning/thinking to the user (Codex-style)
+ * - Shows detailed tool call info ("Reading frontend/index.html lines 1-260")
+ * - Progressive deepening: structure → targets → scope → behaviors → plan
+ * - Prevents duplicate tool calls via tracking
+ * - On re-draft passes, can fetch additional context
  */
 
 import { ChatMessage, ChatRequest, ToolResponse, AIResponse } from '../../../types/schemas';
@@ -30,13 +22,8 @@ export class ReActPlanner {
     private static readonly MAX_TOOL_CALLS = 25;
 
     /**
-     * Explores the codebase and drafts a step-by-step implementation plan
-     * using a ReAct (Reason → Act → Observe) loop.
-     * 
-     * Also collects a context summary for the Critic agent to verify against.
-     * 
-     * @param feedback - Optional feedback from Critic or Human for re-draft passes
-     * @returns Object containing the plan and the collected context summary
+     * Explores the codebase and drafts a step-by-step implementation plan.
+     * Surfaces reasoning to the UI between each tool call.
      */
     static async plan(
         prompt: string,
@@ -50,6 +37,7 @@ export class ReActPlanner {
         let consecutiveToolCalls = 0;
         let isDone = false;
         let collectedFiles: string[] = [];
+        let previousToolCalls: string[] = []; // Track to prevent duplicates
 
         const feedbackSection = feedback
             ? `\n\n--- FEEDBACK FROM PREVIOUS REVIEW ---
@@ -60,55 +48,33 @@ You MUST address all points in this feedback. If the feedback mentions missing f
 
         const systemInstruction = `You are Lattice, an expert code architect. Your job is to deeply understand a codebase and produce a precise, actionable implementation plan.
 
-## HOW YOU WORK — Progressive Deepening Strategy
+## YOUR EXPLORATION STRATEGY
 
-You MUST follow this exploration strategy in order:
+Follow this exact sequence. Do NOT skip levels or jump ahead.
 
-**Level 1 — WIDE SCAN:** Run list_directory_tree on "." FIRST to see the full project structure. Never guess directory names.
+**Step 1 — MAP the project:** Run list_directory_tree on "." to see the full structure. Never guess paths.
 
-**Level 2 — IDENTIFY TARGETS:** From the tree, identify which files are relevant (configs, entry points, components, tests). State what you found.
+**Step 2 — IDENTIFY what matters:** From the tree, determine which files are entry points, configs, and core logic. State your findings clearly.
 
-**Level 3 — ASSESS SCOPE:** Read the key files using read_file_chunk. Determine if the project is large or small. Adjust your approach — for a small project, read everything. For a large one, be surgical.
+**Step 3 — READ key files:** Use read_file_chunk to read the most important files. For small projects (< 10 files), read everything relevant. For large projects, focus on entry points and the files most related to the user's request.
 
-**Level 4 — EXTRACT BEHAVIORS:** Use search_workspace_regex to find specific patterns: API calls (fetch, axios), event handlers, state management, routing, etc. Only use simple plain-text search patterns — NEVER use regex escape sequences like \\s, \\b, or complex patterns.
+**Step 4 — SEARCH for patterns:** Use search_workspace_regex with SIMPLE plain-text patterns (e.g., "fetch", "login", "import") to find specific behaviors. NEVER use regex escapes like \\s, \\b, \\d, or special chars like $, ^, *, +, ?, [, ].
 
-**Level 5 — FILL GAPS:** Read any remaining sections you haven't covered. Make sure you understand the full behavior before planning.
+**Step 5 — FILL GAPS:** If you realize you're missing context about a specific file or function, read it now.
 
-**Level 6 — DRAFT PLAN:** Only when you are confident you understand the codebase, output your plan in <FINAL_PLAN>...</FINAL_PLAN> tags.
+**Step 6 — PLAN:** Only when you are confident you understand the codebase, output your plan in <FINAL_PLAN>...</FINAL_PLAN> tags.
 
-## MANDATORY REASONING
+## CRITICAL RULES
 
-Before EVERY tool call, you MUST output your current thinking in <THINKING>...</THINKING> tags. This must include:
-1. What you just learned from the previous observation
-2. What question you still need answered
-3. Why you are choosing this specific next action
-
-Example:
-<THINKING>
-I just read the project structure. The frontend is a single HTML file with no build tools.
-This is unusually minimal — I need to read the entire HTML to understand all UI screens and API contracts.
-Next: Read the HTML file to map the complete behavior.
-</THINKING>
-
-## TOOL RULES
-- ONLY use: list_directory_tree, read_file_chunk, search_workspace_regex
-- Do NOT use edit_file_diff or execute_command during planning
-- For search_workspace_regex: use ONLY simple plain-text patterns like "fetch", "login", "useState"
-- NEVER use regex with \\, $, ^, *, +, ?, [, ]
-- Read at most 300 lines per chunk (use start_line/end_line to page through large files)
-
-## PLAN FORMAT
-Your <FINAL_PLAN> must include:
-1. A brief summary of what you discovered about the project
-2. Step-by-step changes with EXACT file paths and EXACT function/variable names from the code you read
-3. Dependencies and order of operations
-4. Edge cases and error handling considerations
-5. What should be tested after implementation
-
-Do NOT output <FINAL_PLAN> until you have read enough code to reference exact identifiers.`;
+1. NEVER call the same tool with the same arguments twice. If you already scanned a directory, do NOT scan it again.
+2. NEVER call list_directory_tree more than 3 times total. You should get the full picture from 1-2 scans.
+3. When reading files, specify WHAT you're looking for and WHY.
+4. For search_workspace_regex: ONLY use plain words like "fetch", "route", "export", "class". No regex syntax.
+5. Do NOT use edit_file_diff or execute_command during planning.
+6. Your text responses will be shown to the user. Write clear, concise reasoning about what you discovered and what you're doing next — like a senior engineer explaining their thought process.
+7. Do NOT output <FINAL_PLAN> until you have read enough code to reference exact file paths, function names, and variable names.`;
 
         const passiveContext = await ContextEngine.getPassiveContext(false);
-
         let currentPrompt = `User Request: ${prompt}${feedbackSection}\n\n${passiveContext}`;
 
         while (!isDone) {
@@ -121,8 +87,7 @@ Do NOT output <FINAL_PLAN> until you have read enough code to reference exact id
                 disableTools: false
             };
 
-            const statusPrefix = feedback ? 'Re-planning' : 'Planning';
-            ui.setLoading(`${statusPrefix}: Exploring project...`);
+            ui.setLoading(feedback ? 'Re-planning...' : 'Planning...');
 
             let data: AIResponse;
             try {
@@ -133,7 +98,7 @@ Do NOT output <FINAL_PLAN> until you have read enough code to reference exact id
             } catch (e: any) {
                 toolHistory.push({
                     tool_name: 'system_error',
-                    content: `API Error: ${e.message}\nYou likely provided invalid JSON arguments to a tool. Remember, list_directory_tree requires a "relative_path" argument. Please fix your tool formatting and try again.`,
+                    content: `API Error: ${e.message}\nFix your tool arguments and try again. Remember: list_directory_tree requires "relative_path", read_file_chunk requires "relative_path".`,
                     arguments: {}
                 });
                 consecutiveToolCalls++;
@@ -141,7 +106,7 @@ Do NOT output <FINAL_PLAN> until you have read enough code to reference exact id
                 continue;
             }
 
-            // Handle inline tool calls that models sometimes embed in text
+            // Handle inline tool calls embedded in text
             if (data.type === 'message') {
                 data = ReActPlanner.tryParseInlineToolCall(data.content) || data;
             }
@@ -150,33 +115,58 @@ Do NOT output <FINAL_PLAN> until you have read enough code to reference exact id
                 const toolName = data.tool_name;
                 const toolArgs = data.arguments;
                 const targetPath = toolArgs.relative_path || '';
-                let toolResultContent = '';
+
+                // ─── Display reasoning (Codex-style) ─────────────────
+                if (data.reasoning) {
+                    ui.removeLoading();
+                    // Clean up <THINKING> tags if present, show raw reasoning
+                    const cleanReasoning = data.reasoning
+                        .replace(/<\/?THINKING>/gi, '')
+                        .trim();
+                    if (cleanReasoning && ui.addMessage) {
+                        ui.addMessage(cleanReasoning, false);
+                    }
+                }
 
                 // Block non-planning tools
                 if (toolName === 'edit_file_diff' || toolName === 'execute_command') {
                     toolHistory.push({
                         tool_name: toolName,
-                        content: `Error: You cannot use ${toolName} during the planning phase. Continue exploring with read-only tools, then output your <FINAL_PLAN>.`,
+                        content: `Error: You cannot use ${toolName} during planning. Continue exploring, then output <FINAL_PLAN>.`,
                         arguments: toolArgs
                     });
                     consecutiveToolCalls++;
                     continue;
                 }
 
-                // Update UI
-                ui.removeLoading();
-                let icon = '📂'; let action = 'Scanning';
-                if (toolName === 'read_file_chunk') { icon = '📄'; action = 'Reading'; }
-                else if (toolName === 'search_workspace_regex') { icon = '🔍'; action = 'Searching'; }
-                ui.addStep(icon, action, targetPath || toolArgs.pattern || '.');
-                ui.setLoading(`${statusPrefix}: ${action} ${targetPath || toolArgs.pattern || ''}...`);
+                // Detect duplicate tool calls
+                const callSignature = `${toolName}:${JSON.stringify(toolArgs)}`;
+                if (previousToolCalls.includes(callSignature)) {
+                    toolHistory.push({
+                        tool_name: toolName,
+                        content: `Error: You already made this exact tool call. Do NOT repeat tool calls. Move on to the next step or output your <FINAL_PLAN>.`,
+                        arguments: toolArgs
+                    });
+                    consecutiveToolCalls++;
+                    if (consecutiveToolCalls > this.MAX_TOOL_CALLS) { break; }
+                    continue;
+                }
+                previousToolCalls.push(callSignature);
 
+                // ─── Display detailed tool info (Codex-style) ─────────
+                ui.removeLoading();
+                const toolDescription = ReActPlanner.describeToolCall(toolName, toolArgs);
+                ui.addStep(toolDescription.icon, toolDescription.action, toolDescription.detail);
+                ui.setLoading(`${toolDescription.action}: ${toolDescription.detail}...`);
+
+                // Execute the tool
+                let toolResultContent = '';
                 try {
                     if (toolName === 'read_file_chunk') {
                         toolResultContent = await FileSystemTools.readFileChunk(
                             workspacePath, targetPath, toolArgs.start_line, toolArgs.end_line
                         );
-                        collectedFiles.push(`[File: ${targetPath}]`);
+                        collectedFiles.push(targetPath);
                     } else if (toolName === 'list_directory_tree') {
                         toolResultContent = await FileSystemTools.listDirectoryTree(
                             workspacePath, targetPath, toolArgs.depth
@@ -196,26 +186,54 @@ Do NOT output <FINAL_PLAN> until you have read enough code to reference exact id
                 consecutiveToolCalls++;
 
                 if (consecutiveToolCalls > this.MAX_TOOL_CALLS) {
-                    // Force the agent to output a plan with what it has
                     toolHistory.push({
                         tool_name: 'system_warning',
-                        content: `You have used ${this.MAX_TOOL_CALLS} tool calls. You MUST output your <FINAL_PLAN> now with what you have learned so far. No more tool calls.`,
+                        content: `You have used ${this.MAX_TOOL_CALLS} tool calls. Output your <FINAL_PLAN> NOW.`,
                         arguments: {}
                     });
                 }
             } else {
-                // Agent returned text — check for <FINAL_PLAN>
+                // ─── Agent returned text ──────────────────────────────
+                // Check if it contains reasoning without a final plan (intermediate thinking)
+                const hasPlan = data.content.includes('<FINAL_PLAN>');
+
+                if (!hasPlan) {
+                    // This is intermediate reasoning — display it to the user
+                    ui.removeLoading();
+                    const cleanText = data.content
+                        .replace(/<\/?THINKING>/gi, '')
+                        .trim();
+                    if (cleanText && ui.addMessage) {
+                        ui.addMessage(cleanText, false);
+                    }
+                    // The model output text but no tool call and no plan — 
+                    // push it back as context and continue the loop
+                    toolHistory.push({
+                        tool_name: 'planner_reasoning',
+                        content: cleanText,
+                        arguments: {}
+                    });
+                    consecutiveToolCalls++;
+                    if (consecutiveToolCalls > this.MAX_TOOL_CALLS) { break; }
+                    continue;
+                }
+
+                // Extract the final plan
                 const match = data.content.match(/<FINAL_PLAN>([\s\S]*?)<\/FINAL_PLAN>/);
                 const plan = match ? match[1].trim() : data.content;
 
+                // Display any reasoning that came before the plan
+                const preplanText = data.content.split('<FINAL_PLAN>')[0]
+                    .replace(/<\/?THINKING>/gi, '')
+                    .trim();
+                if (preplanText && ui.addMessage) {
+                    ui.addMessage(preplanText, false);
+                }
+
                 ui.removeLoading();
-                ui.addStep('📝', 'Planning', feedback ? 'Plan re-drafted' : 'Plan drafted');
+                ui.addStep('📝', 'Plan Ready', feedback ? 'Plan re-drafted' : 'Implementation plan drafted');
 
-                // Build a context summary for the Critic
-                const contextSummary = ReActPlanner.buildContextSummary(
-                    collectedFiles, toolHistory, data.content
-                );
-
+                const contextSummary = ReActPlanner.buildContextSummary(collectedFiles, toolHistory);
                 return { plan, contextSummary };
             }
         }
@@ -228,48 +246,63 @@ Do NOT output <FINAL_PLAN> until you have read enough code to reference exact id
     }
 
     /**
-     * Builds a summary of what the planner discovered for the Critic to verify against.
-     * Extracts <THINKING> blocks and file list as evidence.
+     * Creates a human-readable description of a tool call for the UI.
+     * Instead of "📂 Scanning: .rontend", shows "📂 Listing: ./frontend (depth 2)"
      */
-    private static buildContextSummary(
-        collectedFiles: string[],
-        toolHistory: ToolResponse[],
-        finalResponse: string
-    ): string {
+    private static describeToolCall(toolName: string, args: Record<string, any>): { icon: string; action: string; detail: string } {
+        const path = args.relative_path || '.';
+
+        if (toolName === 'list_directory_tree') {
+            const depth = args.depth ? ` (depth ${args.depth})` : '';
+            return { icon: '📂', action: 'Listing', detail: `${path}${depth}` };
+        }
+        if (toolName === 'read_file_chunk') {
+            const lines = (args.start_line && args.end_line)
+                ? ` (lines ${args.start_line}-${args.end_line})`
+                : '';
+            return { icon: '📄', action: 'Reading', detail: `${path}${lines}` };
+        }
+        if (toolName === 'search_workspace_regex') {
+            const scope = path !== '.' ? ` in ${path}` : '';
+            return { icon: '🔍', action: 'Searching', detail: `"${args.pattern}"${scope}` };
+        }
+        return { icon: '🔧', action: toolName, detail: JSON.stringify(args).substring(0, 80) };
+    }
+
+    /**
+     * Builds a context summary for the Critic to verify against.
+     */
+    private static buildContextSummary(collectedFiles: string[], toolHistory: ToolResponse[]): string {
         const parts: string[] = [];
 
-        // Files explored
         if (collectedFiles.length > 0) {
-            parts.push(`## Files Explored\n${collectedFiles.join('\n')}`);
+            const uniqueFiles = [...new Set(collectedFiles)];
+            parts.push(`## Files Read\n${uniqueFiles.map(f => `- ${f}`).join('\n')}`);
         }
 
-        // Extract thinking blocks from the final response as reasoning evidence
-        const thinkingBlocks = finalResponse.match(/<THINKING>([\s\S]*?)<\/THINKING>/g);
-        if (thinkingBlocks && thinkingBlocks.length > 0) {
-            const lastThinking = thinkingBlocks[thinkingBlocks.length - 1]
-                .replace(/<\/?THINKING>/g, '').trim();
-            parts.push(`## Final Reasoning\n${lastThinking}`);
-        }
-
-        // Key search results
         const searchResults = toolHistory
             .filter(t => t.tool_name === 'search_workspace_regex')
-            .map(t => `Search "${t.arguments.pattern}": ${t.content.substring(0, 200)}`);
+            .map(t => `- "${t.arguments.pattern}": ${t.content.substring(0, 300)}`);
         if (searchResults.length > 0) {
-            parts.push(`## Key Searches\n${searchResults.join('\n')}`);
+            parts.push(`## Searches Performed\n${searchResults.join('\n')}`);
+        }
+
+        const reasoning = toolHistory
+            .filter(t => t.tool_name === 'planner_reasoning')
+            .map(t => t.content)
+            .join('\n');
+        if (reasoning) {
+            parts.push(`## Planner Reasoning\n${reasoning.substring(0, 1000)}`);
         }
 
         return parts.join('\n\n') || 'No context summary available.';
     }
 
     /**
-     * Attempts to parse inline tool calls that models sometimes embed in text
-     * instead of making proper function calls.
+     * Attempts to parse inline tool calls embedded in text.
      */
     private static tryParseInlineToolCall(content: string): AIResponse | null {
-        if (content.includes('<FINAL_PLAN>')) {
-            return null; // Don't intercept if it's outputting the final plan
-        }
+        if (content.includes('<FINAL_PLAN>')) { return null; }
 
         const matches = content.match(/\{[^{}]*(?:"pattern"|"relative_path")[^{}]*\}/g);
         if (!matches) { return null; }
