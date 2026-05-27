@@ -25,6 +25,17 @@ const CORE_TOOLS = [
         }
     },
     {
+        name: "read_full_file",
+        description: "Reads an ENTIRE file (up to 500 lines). Use this for files under 500 lines to get complete context in one call. Preferred over read_file_chunk for understanding full file behavior.",
+        parameters: {
+            type: "object",
+            properties: {
+                relative_path: { type: "string", description: "The file path to read in full." }
+            },
+            required: ["relative_path"]
+        }
+    },
+    {
         name: "edit_file_diff",
         description: "The SAFEST way to edit code. Replaces an exact 'search_block' with a 'replace_block'. Always include 3 lines of surrounding code in the search block to ensure the correct match.",
         parameters: {
