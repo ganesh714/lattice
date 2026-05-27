@@ -71,8 +71,9 @@ Follow this exact sequence. Do NOT skip levels or jump ahead.
 3. When reading files, specify WHAT you're looking for and WHY.
 4. For search_workspace_regex: ONLY use plain words like "fetch", "route", "export", "class". No regex syntax.
 5. Do NOT use edit_file_diff or execute_command during planning.
-6. Your text responses will be shown to the user. Write clear, concise reasoning about what you discovered and what you're doing next — like a senior engineer explaining their thought process.
-7. Do NOT output <FINAL_PLAN> until you have read enough code to reference exact file paths, function names, and variable names.`;
+6. Your text responses will be shown to the user. Write clear, concise reasoning about what you discovered and what you're doing next.
+7. DO NOT ask the user for file paths, line numbers, or permission. You are an autonomous agent. If you need to find a file, use search or list tools.
+8. Do NOT output <FINAL_PLAN> until you have read enough code to reference exact file paths, function names, and variable names.`;
 
         const passiveContext = await ContextEngine.getPassiveContext(false);
         let currentPrompt = `User Request: ${prompt}${feedbackSection}\n\n${passiveContext}`;
@@ -116,18 +117,6 @@ Follow this exact sequence. Do NOT skip levels or jump ahead.
                 const toolArgs = data.arguments;
                 const targetPath = toolArgs.relative_path || '';
 
-                // ─── Display reasoning (Codex-style) ─────────────────
-                if (data.reasoning) {
-                    ui.removeLoading();
-                    // Clean up <THINKING> tags if present, show raw reasoning
-                    const cleanReasoning = data.reasoning
-                        .replace(/<\/?THINKING>/gi, '')
-                        .trim();
-                    if (cleanReasoning && ui.addMessage) {
-                        ui.addMessage(cleanReasoning, false);
-                    }
-                }
-
                 // Block non-planning tools
                 if (toolName === 'edit_file_diff' || toolName === 'execute_command') {
                     toolHistory.push({
@@ -153,11 +142,24 @@ Follow this exact sequence. Do NOT skip levels or jump ahead.
                 }
                 previousToolCalls.push(callSignature);
 
-                // ─── Display detailed tool info (Codex-style) ─────────
+                // ─── Display reasoning and tool info (Codex-style) ─────────
                 ui.removeLoading();
                 const toolDescription = ReActPlanner.describeToolCall(toolName, toolArgs);
                 ui.addStep(toolDescription.icon, toolDescription.action, toolDescription.detail);
                 ui.setLoading(`${toolDescription.action}: ${toolDescription.detail}...`);
+
+                let chatMessage = '';
+                if (data.reasoning) {
+                    const cleanReasoning = data.reasoning.replace(/<\/?THINKING>/gi, '').trim();
+                    if (cleanReasoning) {
+                        chatMessage += cleanReasoning + '\n\n';
+                    }
+                }
+                chatMessage += `> **${toolDescription.icon} Ran ${toolDescription.action}** on \`${toolDescription.detail}\``;
+                
+                if (ui.addMessage) {
+                    ui.addMessage(chatMessage, false);
+                }
 
                 // Execute the tool
                 let toolResultContent = '';
