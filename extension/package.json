@@ -70,7 +70,7 @@
         {
           "type": "webview",
           "id": "lattice.chatView",
-          "name": "Chat",
+          "name": "lattice",
           "icon": "$(comment-discussion)"
         }
       ]
