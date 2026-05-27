@@ -1,6 +1,5 @@
 import * as vscode from 'vscode';
 import { LatticeChatProvider } from './providers/LatticeChatProvider';
-import { OnnxClient } from './models/OnnxClient';
 import { McpClient } from './tools/McpClient';
 
 /**
@@ -8,9 +7,6 @@ import { McpClient } from './tools/McpClient';
  */
 export function activate(context: vscode.ExtensionContext) {
     console.log('[Lattice] Extension is now active!');
-
-    // Eagerly initialize the L0 Router Worker Thread
-    OnnxClient.init(context.extensionUri);
 
     // Register the Sidebar Chat Provider
     const provider = new LatticeChatProvider(context.extensionUri);
