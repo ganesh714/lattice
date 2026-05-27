@@ -1,21 +1,20 @@
 /**
  * Lane 3 — Multi-Agent Orchestrator (Risky / Large Tasks)
  * 
- * Coordinates the 4-agent sequential pipeline for high-risk or large code changes:
+ * Simplified pipeline using the ReAct pattern (like Codex/Cursor):
  * 
- *   Step 0: TaskDecomposer    → Prompt → SearchPlan
- *   Agent 1: ContextReader    → SearchPlan → Raw Code Chunks
- *   Agent 2: ArchExtractor    → Raw Chunks → Architecture Map
- *   Agent 3: Planner          → SharedContextBundle → Draft Plan (has read-only tools)
- *   Agent 4: Critic           → Plan + ArchMap → Approve/Reject (max 2 retries)
- *   Human-in-the-Loop         → Final approval UI
- *   Handoff                   → Lane 2 Execution Flow
+ *   ReAct Planner  → Single agent that reads, reasons, reads more, then plans
+ *   Critic         → Reviews plan against exploration context (max 2 retries)
+ *   Human-in-Loop  → Final approval UI
+ *   Handoff        → Lane 2 Execution Flow
  * 
- * Issue fixes applied:
- *   #1 (Blind Critic)       — Critic receives both plan AND architecture map
- *   #2 (No feedback loop)   — Planner has read-only tool access on re-drafts
- *   #3 (No loop limit)      — Max 2 Critic retries, then force-escalate to human
- *   #4 (Blind Agent 1)      — TaskDecomposer gives Agent 1 a structured search plan
+ * The ReAct Planner uses progressive deepening:
+ *   Level 1: Wide scan (project structure)
+ *   Level 2: Identify targets (configs, entry points)
+ *   Level 3: Assess scope (read key files)
+ *   Level 4: Extract behaviors (grep for patterns)
+ *   Level 5: Fill gaps (read remaining sections)
+ *   Level 6: Draft plan (with exact identifiers from code)
  */
 
 import { ILaneStrategy } from './ILaneStrategy';
@@ -23,12 +22,8 @@ import { ChatMessage } from '../../types/schemas';
 import { IAgentUI } from '../AgentExecutor';
 import { Lane2Execution } from './Lane2Execution';
 
-import { TaskDecomposer } from './lane3/TaskDecomposer';
-import { ContextReaderAgent } from './lane3/ContextReaderAgent';
-import { ArchExtractorAgent } from './lane3/ArchExtractorAgent';
-import { PlannerAgent } from './lane3/PlannerAgent';
+import { ReActPlanner } from './lane3/ReActPlanner';
 import { CriticAgent } from './lane3/CriticAgent';
-import { SharedContextBundle } from './lane3/types';
 
 export class Lane3Risky implements ILaneStrategy {
     constructor(
@@ -41,50 +36,26 @@ export class Lane3Risky implements ILaneStrategy {
         const criticModel = settings?.l2Model || model;
 
         try {
-            // ─── Step 0: Task Decomposer ─────────────────────────────────
-            this.ui.setLoading('Step 0: Decomposing task...');
-            this.ui.statusUpdate?.('Decomposing task into search plan...');
-            const searchPlan = await TaskDecomposer.decompose(prompt, history, model);
-            this.ui.removeLoading();
-            this.ui.addStep('🧩', 'Decompose', `${searchPlan.search_terms.length} search terms, ${searchPlan.likely_dirs.length} dirs`);
-
-            // ─── Agent 1: Context Reader ─────────────────────────────────
-            this.ui.statusUpdate?.('Agent 1: Gathering context...');
-            const rawCodeChunks = await ContextReaderAgent.gatherContext(
-                searchPlan, this.workspacePath, model, history, this.ui
+            // ─── Phase 1: ReAct Planning ─────────────────────────────────
+            this.ui.statusUpdate?.('ReAct Planner: Exploring codebase...');
+            let { plan, contextSummary } = await ReActPlanner.plan(
+                prompt, model, history, this.workspacePath, this.ui
             );
-
-            // ─── Agent 2: Architecture Extractor ─────────────────────────
-            this.ui.statusUpdate?.('Agent 2: Extracting architecture...');
-            const architectureMap = await ArchExtractorAgent.extract(
-                rawCodeChunks, model, history, this.ui
-            );
-
-            // ─── Build Shared Context Bundle ─────────────────────────────
-            const bundle: SharedContextBundle = {
-                rawCodeChunks,
-                architectureMap,
-                userPrompt: prompt,
-                searchPlan
-            };
-
-            // ─── Agent 3 + Agent 4: Planner-Critic Loop ─────────────────
-            let plan = await PlannerAgent.draft(bundle, model, history, this.workspacePath, this.ui);
 
             // Show the drafted plan to the user
             if (this.ui.addMessage) {
                 this.ui.addMessage("### 📋 Drafted Implementation Plan\n\n" + plan, false);
             }
 
-            // Critic review loop (max 2 retries)
+            // ─── Phase 2: Critic Review Loop (max 2 retries) ─────────────
             let criticPassed = false;
             let criticRetries = 0;
             let lastCriticFeedback = '';
 
             while (!criticPassed && criticRetries < CriticAgent.MAX_CRITIC_RETRIES) {
-                this.ui.statusUpdate?.(`Agent 4: Critic review (attempt ${criticRetries + 1}/${CriticAgent.MAX_CRITIC_RETRIES})...`);
+                this.ui.statusUpdate?.(`Critic review (attempt ${criticRetries + 1}/${CriticAgent.MAX_CRITIC_RETRIES})...`);
                 const criticResult = await CriticAgent.review(
-                    plan, architectureMap, prompt, criticModel, history, this.ui
+                    plan, contextSummary, prompt, criticModel, history, this.ui
                 );
 
                 if (criticResult.approved) {
@@ -94,11 +65,14 @@ export class Lane3Risky implements ILaneStrategy {
                     lastCriticFeedback = criticResult.feedback || 'Plan has issues.';
 
                     if (criticRetries < CriticAgent.MAX_CRITIC_RETRIES) {
-                        // Re-draft with Critic feedback
-                        this.ui.statusUpdate?.('Agent 3: Re-drafting plan based on Critic feedback...');
-                        plan = await PlannerAgent.draft(
-                            bundle, model, history, this.workspacePath, this.ui, lastCriticFeedback
+                        // Re-plan with Critic feedback — the ReAct Planner can
+                        // fetch additional files on the re-draft pass
+                        this.ui.statusUpdate?.('ReAct Planner: Re-drafting based on Critic feedback...');
+                        const revised = await ReActPlanner.plan(
+                            prompt, model, history, this.workspacePath, this.ui, lastCriticFeedback
                         );
+                        plan = revised.plan;
+                        contextSummary = revised.contextSummary;
 
                         if (this.ui.addMessage) {
                             this.ui.addMessage("### 🔄 Revised Plan (Critic Feedback)\n\n" + plan, false);
@@ -107,7 +81,7 @@ export class Lane3Risky implements ILaneStrategy {
                 }
             }
 
-            // If Critic never approved after max retries, force-escalate with warning
+            // Force-escalate if Critic never approved
             if (!criticPassed) {
                 this.ui.addStep('⚠️', 'Critic', `Force-escalating after ${CriticAgent.MAX_CRITIC_RETRIES} failed reviews`);
                 if (this.ui.addMessage) {
@@ -118,7 +92,7 @@ export class Lane3Risky implements ILaneStrategy {
                 }
             }
 
-            // ─── Human-in-the-Loop Approval ──────────────────────────────
+            // ─── Phase 3: Human-in-the-Loop Approval ─────────────────────
             this.ui.removeLoading();
             this.ui.addStep('⏸️', 'Approval', 'Waiting for human review');
             this.ui.statusUpdate?.('Waiting for plan approval...');
@@ -132,7 +106,7 @@ export class Lane3Risky implements ILaneStrategy {
 
             this.ui.addStep('✅', 'Approval', 'Plan approved by human');
 
-            // ─── Handoff to Lane 2 Execution ─────────────────────────────
+            // ─── Phase 4: Handoff to Lane 2 Execution ────────────────────
             this.ui.statusUpdate?.('Executing approved plan...');
             return await this.lane2Fallback.runExecutionFlow(prompt, plan, model, history, []);
 
