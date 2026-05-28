@@ -24,7 +24,7 @@ const vscodeMock = {
 // Intercept require calls to inject our mock
 const Module = require('module');
 const originalRequire = Module.prototype.require;
-Module.prototype.require = function(id: string) {
+Module.prototype.require = function (id: string) {
     if (id === 'vscode') return vscodeMock;
     return originalRequire.apply(this, arguments);
 };
@@ -57,6 +57,7 @@ Example:
     const symbolIndex = args.indexOf("--symbol");
     const symbolName = symbolIndex !== -1 ? args[symbolIndex + 1] : undefined;
     const model = process.env.GROQ_API_KEY ? "groq:llama-3.1-8b-instant" : "gemini-3.5-flash"; // Default test model
+    // const model = process.env.GROQ_API_KEY ? "groq:llama-3.3-70b-versatile" : "gemini-3.5-flash"; // Default test model
     const workspacePath = path.dirname(filePath);
 
     console.log(`🚀 Starting FileIntelligenceAgent Test`);
@@ -67,7 +68,7 @@ Example:
         if (symbolName) {
             console.log(`\n--- TESTING analyze_large_file (Building Cache First) ---`);
             await FileIntelligenceAgent.analyze(workspacePath, filePath, model);
-            
+
             console.log(`\n--- TESTING deep_dive_symbol ("${symbolName}") ---`);
             const deepDive = await FileIntelligenceAgent.fetchSymbol(workspacePath, filePath, model, symbolName);
             console.log(deepDive);

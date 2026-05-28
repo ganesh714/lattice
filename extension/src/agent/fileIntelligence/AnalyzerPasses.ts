@@ -58,7 +58,7 @@ Rules:
 - For Java/C#: list every class and method signature
 - For C/C++: list every function signature and class
 - For Dart/Flutter: list every Widget class and method
-- lines field must reference the original file line numbers
+- CRITICAL: lines field MUST reference the exact, specific start and end line for every single symbol independently. Do NOT group or summarize line ranges. Guessing is strictly forbidden.
 
 FILE PATH: ${filePath}
 LANGUAGE: ${language}
@@ -107,6 +107,8 @@ Extract all symbols (functions, classes, selectors, components, etc.) from this 
 
 Return ONLY a JSON array (no markdown):
 [{ "type": "...", "name": "...", "lines": "${chunk.startLine}-${chunk.endLine}", "description": "..." }]
+
+CRITICAL RULE: The "lines" field MUST be exactly scoped to the symbol. Do not use the full chunk range if the symbol is smaller. Do not group multiple symbols into one line range.
 
 CHUNK (lines ${chunk.startLine}–${chunk.endLine}):
 \`\`\`${language}
