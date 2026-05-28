@@ -139,9 +139,9 @@
                 currentBotContainer.className = 'message bot-message';
                 
                 currentStepsDetails = document.createElement('details');
-                currentStepsDetails.className = 'agent-steps-container';
+                currentStepsDetails.className = 'premium-details agent-steps-container';
                 currentStepsDetails.style.display = 'none';
-                currentStepsDetails.innerHTML = '<summary>View Agent Steps</summary><div class="steps-content"></div>';
+                currentStepsDetails.innerHTML = '<summary><span class="summary-icon">🛠️</span><span class="summary-text">Tool Usages & Steps</span></summary><div class="details-content steps-content"></div>';
                 
                 const finalContent = document.createElement('div');
                 finalContent.className = 'final-content';
@@ -157,7 +157,7 @@
                 currentStepsDetails.style.display = 'block';
                 const stepDiv = document.createElement('div');
                 stepDiv.className = 'agent-step';
-                stepDiv.innerHTML = `<span>${message.icon}</span> <span>${message.action}:</span> <code>${message.target}</code>`;
+                stepDiv.innerHTML = `<span class="step-icon">${message.icon}</span> <span class="step-action">${message.action}:</span> <code class="step-target">${message.target}</code>`;
                 currentStepsDetails.querySelector('.steps-content').appendChild(stepDiv);
                 chatHistory.scrollTop = chatHistory.scrollHeight;
                 break;
@@ -171,7 +171,7 @@
                             content.style.color = 'var(--vscode-errorForeground)';
                             content.textContent = message.text;
                         } else {
-                            content.innerHTML = marked.parse(message.text);
+                            content.innerHTML = formatBotMessage(message.text);
                         }
                         currentBotContainer = null;
                         currentStepsDetails = null;
@@ -228,6 +228,18 @@
         }
     });
 
+    function formatBotMessage(text) {
+        if (!text) return '';
+        const parts = text.split(/(<think>[\s\S]*?<\/think>)/gi);
+        return parts.map(part => {
+            if (part.toLowerCase().startsWith('<think>')) {
+                const innerText = part.substring(7, part.length - 8);
+                return `<details class="premium-details think-container"><summary><span class="summary-icon">🧠</span><span class="summary-text">Thinking Process</span></summary><div class="details-content">${marked.parse(innerText)}</div></details>`;
+            }
+            return marked.parse(part);
+        }).join('');
+    }
+
     function renderDebugPanel(chatHistoryData, toolHistoryData) {
         let panel = document.getElementById('debug-panel');
         if (!panel) {
@@ -272,7 +284,7 @@
             msgDiv.id = 'loading-indicator'; 
             msgDiv.textContent = text;
         } else if (!isUser) {
-            msgDiv.innerHTML = marked.parse(text);
+            msgDiv.innerHTML = formatBotMessage(text);
         } else {
             msgDiv.textContent = text;
         }
