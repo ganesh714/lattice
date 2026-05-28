@@ -1,7 +1,7 @@
 const CORE_TOOLS = [
     {
         name: "list_directory_tree",
-        description: "Returns a clean JSON-like structure of folders and files. Use this to map the project layout.",
+        description: "Returns a visual tree of folders and files with line counts. Files over 400 lines are marked ⚠️ LARGE. Use this to map the project layout.",
         parameters: {
             type: "object",
             properties: {
@@ -26,7 +26,7 @@ const CORE_TOOLS = [
     },
     {
         name: "read_full_file",
-        description: "Reads an ENTIRE file (up to 500 lines). Use this for files under 500 lines to get complete context in one call. Preferred over read_file_chunk for understanding full file behavior.",
+        description: "Reads an ENTIRE file (up to 400 lines). If the file exceeds 400 lines, it will NOT return the content — use analyze_large_file instead.",
         parameters: {
             type: "object",
             properties: {
@@ -62,7 +62,7 @@ const CORE_TOOLS = [
     },
     {
         name: "analyze_large_file",
-        description: "Uses FileIntelligenceAgent to semantically analyze a large file (over 500 lines). Extracts a high-level skeleton and symbol index (functions, classes, etc.) to help you understand the file structure without reading every line.",
+        description: "Uses FileIntelligenceAgent to semantically analyze a large file (over 400 lines). Extracts a high-level skeleton and symbol index (functions, classes, etc.) to help you understand the file structure without reading every line. The directory tree marks these files with ⚠️ LARGE.",
         parameters: {
             type: "object",
             properties: {

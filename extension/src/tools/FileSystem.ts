@@ -6,34 +6,58 @@ export class FileSystemTools {
     static async listDirectoryTree(workspacePath: string, relativePath: string, depth: number = 2): Promise<string> {
         const absolutePath = path.isAbsolute(relativePath) ? relativePath : path.join(workspacePath, relativePath);
         const targetUri = vscode.Uri.file(absolutePath);
-        
-        async function scan(uri: vscode.Uri, currentDepth: number): Promise<any> {
-            if (currentDepth > Math.min(depth, 3)) return "..."; // Hard cap depth at 3
+        const IGNORED = ['node_modules', '.git', 'dist', 'build', '.gemini'];
+
+        async function getLineCount(fileUri: vscode.Uri): Promise<number> {
             try {
-                const entries = await vscode.workspace.fs.readDirectory(uri);
-                const result: any = {};
-                for (const [name, type] of entries) {
-                    // Ignore common large folders
-                    if (['node_modules', '.git', 'dist', 'build', '.gemini'].includes(name)) {
-                        continue;
-                    }
-                    if (type === vscode.FileType.Directory) {
-                        result[name] = await scan(vscode.Uri.joinPath(uri, name), currentDepth + 1);
-                    } else {
-                        result[name] = "file";
-                    }
-                }
-                return result;
-            } catch (e: any) {
-                if (e.message?.includes('ENOENT') || e.code === 'FileNotFound') {
-                    return `[Directory does not exist: ${uri.fsPath}. You may need to create it.]`;
-                }
-                return `[Error reading directory: ${e.message}]`;
+                const raw = await vscode.workspace.fs.readFile(fileUri);
+                const text = new TextDecoder().decode(raw);
+                return text.split('\n').length;
+            } catch {
+                return -1;
             }
         }
 
-        const tree = await scan(targetUri, 0);
-        return JSON.stringify(tree, null, 2);
+        async function scan(uri: vscode.Uri, prefix: string, currentDepth: number): Promise<string[]> {
+            if (currentDepth > Math.min(depth, 3)) return [`${prefix}...`];
+            try {
+                const entries = await vscode.workspace.fs.readDirectory(uri);
+                const filtered = entries.filter(([name]) => !IGNORED.includes(name));
+                // Sort: directories first, then files
+                filtered.sort((a, b) => {
+                    if (a[1] === b[1]) return a[0].localeCompare(b[0]);
+                    return a[1] === vscode.FileType.Directory ? -1 : 1;
+                });
+
+                const lines: string[] = [];
+                for (let i = 0; i < filtered.length; i++) {
+                    const [name, type] = filtered[i];
+                    const isLast = i === filtered.length - 1;
+                    const connector = isLast ? '└── ' : '├── ';
+                    const childPrefix = isLast ? '    ' : '│   ';
+
+                    if (type === vscode.FileType.Directory) {
+                        lines.push(`${prefix}${connector}${name}/`);
+                        const children = await scan(vscode.Uri.joinPath(uri, name), prefix + childPrefix, currentDepth + 1);
+                        lines.push(...children);
+                    } else {
+                        const lineCount = await getLineCount(vscode.Uri.joinPath(uri, name));
+                        const sizeLabel = lineCount > 400 ? ` (${lineCount} lines ⚠️ LARGE)` : lineCount > 0 ? ` (${lineCount} lines)` : '';
+                        lines.push(`${prefix}${connector}${name}${sizeLabel}`);
+                    }
+                }
+                return lines;
+            } catch (e: any) {
+                if (e.message?.includes('ENOENT') || e.code === 'FileNotFound') {
+                    return [`${prefix}[Directory does not exist: ${uri.fsPath}. You may need to create it.]`];
+                }
+                return [`${prefix}[Error reading directory: ${e.message}]`];
+            }
+        }
+
+        const rootName = path.basename(absolutePath) || relativePath;
+        const treeLines = await scan(targetUri, '', 0);
+        return `${rootName}/\n${treeLines.join('\n')}`;
     }
 
     static async readFileChunk(workspacePath: string, relativePath: string, startLine: number, endLine: number): Promise<string> {
@@ -107,16 +131,14 @@ export class FileSystemTools {
         const content = new TextDecoder().decode(uint8Array);
         const lines = content.split('\n');
 
-        // Safety cap at 500 lines
-        const maxLines = Math.min(lines.length, 500);
+        // Auto-redirect large files (>400 lines) to analyze_large_file
+        if (lines.length > 400) {
+            return `[STOP: This file has ${lines.length} lines — too large for read_full_file. Use analyze_large_file on "${relativePath}" to get the semantic index, then use deep_dive_symbol to read specific parts.]`;
+        }
+
         const result = lines
-            .slice(0, maxLines)
             .map((line, index) => `${index + 1}: ${line}`)
             .join('\n');
-
-        if (lines.length > 500) {
-            return result + `\n\n[File truncated at 500 lines. Total lines: ${lines.length}. This is a LARGE FILE. Use analyze_large_file to get the semantic index, then use deep_dive_symbol to read specific parts.]`;
-        }
         return result;
     }
 

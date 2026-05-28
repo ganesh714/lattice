@@ -270,30 +270,30 @@ If you have enough context to write the implementation plan, explicitly tell the
      * Instead of "📂 Scanning: .rontend", shows "📂 Listing: ./frontend (depth 2)"
      */
     private static describeToolCall(toolName: string, args: Record<string, any>): { icon: string; action: string; detail: string } {
-        const path = args.relative_path || '.';
+        const filePath = args.relative_path || '.';
 
         if (toolName === 'list_directory_tree') {
             const depth = args.depth ? ` (depth ${args.depth})` : '';
-            return { icon: '📂', action: 'Listing', detail: `${path}${depth}` };
+            return { icon: '📂', action: 'list_directory_tree', detail: `${filePath}${depth}` };
         }
         if (toolName === 'read_full_file') {
-            return { icon: '📄', action: 'Reading', detail: `${path} (full file)` };
+            return { icon: '📄', action: 'read_full_file', detail: `${filePath}` };
         }
         if (toolName === 'read_file_chunk') {
             const lines = (args.start_line && args.end_line)
                 ? ` (lines ${args.start_line}-${args.end_line})`
                 : '';
-            return { icon: '📄', action: 'Reading', detail: `${path}${lines}` };
+            return { icon: '📄', action: 'read_file_chunk', detail: `${filePath}${lines}` };
         }
         if (toolName === 'search_workspace_regex') {
-            const scope = path !== '.' ? ` in ${path}` : '';
-            return { icon: '🔍', action: 'Searching', detail: `"${args.pattern}"${scope}` };
+            const scope = filePath !== '.' ? ` in ${filePath}` : '';
+            return { icon: '🔍', action: 'search_workspace_regex', detail: `"${args.pattern}"${scope}` };
         }
         if (toolName === 'analyze_large_file') {
-            return { icon: '🧠', action: 'Analyzing', detail: `${path} (semantic index)` };
+            return { icon: '🧠', action: 'analyze_large_file', detail: `${filePath}` };
         }
         if (toolName === 'deep_dive_symbol') {
-            return { icon: '🕵️', action: 'Deep Dive', detail: `${args.symbol_name} in ${path}` };
+            return { icon: '🕵️', action: 'deep_dive_symbol', detail: `${args.symbol_name} in ${filePath}` };
         }
         return { icon: '🔧', action: toolName, detail: JSON.stringify(args).substring(0, 80) };
     }
