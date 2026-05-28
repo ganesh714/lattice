@@ -105,7 +105,7 @@ export class FileSystemTools {
             .join('\n');
 
         if (lines.length > 500) {
-            return result + `\n\n[File truncated at 500 lines. Total lines: ${lines.length}. Use read_file_chunk for specific sections.]`;
+            return result + `\n\n[File truncated at 500 lines. Total lines: ${lines.length}. This is a LARGE FILE. Use analyze_large_file to get the semantic index, then use deep_dive_symbol to read specific parts.]`;
         }
         return result;
     }
