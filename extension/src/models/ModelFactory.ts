@@ -75,9 +75,22 @@ export class ModelFactory {
                 const provider = this.getProvider(providerType);
                 const response = await provider.generateResponse(request, systemInstruction);
                 console.log(`[Lattice ModelFactory] Provider "${providerType}" successfully generated a response! Response type: "${response.type}"`);
+                
+                llmTraceChannel.appendLine(`\n<<<<<<<<<< LLM RESPONSE (${providerType}) <<<<<<<<<<`);
+                if (response.type === 'message') {
+                    llmTraceChannel.appendLine(response.content);
+                } else if (response.type === 'tool_call') {
+                    llmTraceChannel.appendLine(`TOOL CALL: ${response.tool_name}`);
+                    llmTraceChannel.appendLine(`ARGUMENTS:\n${JSON.stringify(response.arguments, null, 2)}`);
+                }
+                llmTraceChannel.appendLine(`<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<\n`);
+
                 return response;
             } catch (error: any) {
                 console.error(`[Lattice ModelFactory] Provider "${providerType}" failed! Error details:`, error.message || error);
+                
+                llmTraceChannel.appendLine(`\n[ERROR] LLM CALL FAILED: ${error.message}`);
+                
                 if (error.stack) {
                     console.error(`[Lattice ModelFactory] Stack trace:`, error.stack);
                 }
