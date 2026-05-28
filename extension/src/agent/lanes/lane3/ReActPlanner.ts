@@ -92,7 +92,8 @@ If you have enough context to write the implementation plan, explicitly tell the
                 );
 
                 if (thinkData.type === 'message') {
-                    let text = thinkData.content.replace(/<\/?THINKING>/gi, '').trim();
+                    // Strip both <THINKING> and <think> tags so we can safely wrap the ENTIRE output
+                    let text = thinkData.content.replace(/<\/?(THINKING|think)>/gi, '').trim();
                     // Analyzer is forbidden from outputting the plan, strip it if it hallucinates it
                     if (text.includes('<FINAL_PLAN>')) {
                         text = text.split('<FINAL_PLAN>')[0].trim();
@@ -100,8 +101,8 @@ If you have enough context to write the implementation plan, explicitly tell the
 
                     if (text) {
                         ui.removeLoading();
-                        // Format for the UI dropdown
-                        const thinkUiText = text.toLowerCase().includes('<think>') ? text : `<think>\n${text}\n</think>`;
+                        // Wrap the ENTIRE output so it goes cleanly into the single "Thought Process" dropdown
+                        const thinkUiText = `<think>\n${text}\n</think>`;
                         if (ui.addMessage) ui.addMessage(thinkUiText, false);
                         
                         toolHistory.push({
@@ -189,8 +190,9 @@ If you have enough context to write the implementation plan, explicitly tell the
                 ui.addStep(toolDescription.icon, toolDescription.action, toolDescription.detail);
                 ui.setLoading(`${toolDescription.action}: ${toolDescription.detail}...`);
 
-                // We don't need to print reasoning here because the Analyzer already did
-                const chatMessage = `> **${toolDescription.icon} Ran ${toolDescription.action}** on \`${toolDescription.detail}\``;
+                // We don't need to print reasoning here because the Analyzer already did.
+                // Format the tool execution as a clean dropdown matching the Thought Process UI.
+                const chatMessage = `<details class="agent-dropdown tool-container" open><summary><span class="summary-text">${toolDescription.icon} Ran ${toolDescription.action}</span></summary><div class="details-content"><code>${toolDescription.detail}</code></div></details>`;
                 if (ui.addMessage) ui.addMessage(chatMessage, false);
 
                 let toolResultContent = '';
