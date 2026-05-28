@@ -38,6 +38,7 @@ export class ReActPlanner {
         let isDone = false;
         let collectedFiles: string[] = [];
         let previousToolCalls: string[] = []; // Track to prevent duplicates
+        let reasoningHistory: string[] = [];
 
         const feedbackSection = feedback
             ? `\n\n--- FEEDBACK FROM PREVIOUS REVIEW ---
@@ -53,7 +54,7 @@ Write 2-4 insightful sentences explaining:
 2. What specific file, identifier, or directory the Acting Agent needs to investigate next. NEVER guess filenames—ONLY suggest files you have explicitly seen in the list_directory_tree output.
 If you have enough context to write the implementation plan, explicitly tell the Acting Agent to output the <FINAL_PLAN>.`;
 
-        const actInstruction = `You are the Acting Agent. Your job is to execute the action suggested by the Analyzer Agent (found in the most recent "planner_reasoning" in your tool history).
+        const actInstruction = `You are the Acting Agent. Your job is to execute the action suggested by the Analyzer Agent (found in the "[Analyzer Agent Reasoning]" block at the end of your prompt).
 
 ## EXPLORATION STRATEGY
 **Step 1 — MAP the project:** list_directory_tree on "." with depth 2-3.
@@ -105,21 +106,14 @@ If you have enough context to write the implementation plan, explicitly tell the
                         const thinkUiText = `<think>\n${text}\n</think>`;
                         if (ui.addMessage) ui.addMessage(thinkUiText, false);
 
-                        toolHistory.push({
-                            tool_name: 'planner_reasoning',
-                            content: text,
-                            arguments: {}
-                        });
+                        reasoningHistory.push(text);
+                        currentPrompt += `\n\n[Analyzer Agent Reasoning]:\n${text}`;
                     }
                 }
             } catch (e: any) {
                 if (e.message?.includes('aborted')) throw e;
                 console.error('[Lattice] Analyzer phase failed:', e.message);
-                toolHistory.push({
-                    tool_name: 'system_error',
-                    content: `Analyzer Error: ${e.message}`,
-                    arguments: {}
-                });
+                currentPrompt += `\n\n[System Error during Analyzer Phase]: ${e.message}`;
             }
 
             if (ui.isCancelled?.()) throw new Error('Generation aborted by user.');
@@ -142,11 +136,7 @@ If you have enough context to write the implementation plan, explicitly tell the
                     actInstruction
                 );
             } catch (e: any) {
-                toolHistory.push({
-                    tool_name: 'system_error',
-                    content: `Actor API Error: ${e.message}\nFix your tool arguments.`,
-                    arguments: {}
-                });
+                currentPrompt += `\n\n[System Error during Actor Phase]: Actor API Error: ${e.message}\nFix your tool arguments.`;
                 consecutiveToolCalls++;
                 if (consecutiveToolCalls > this.MAX_TOOL_CALLS) break;
                 continue;
@@ -218,22 +208,14 @@ If you have enough context to write the implementation plan, explicitly tell the
                 consecutiveToolCalls++;
 
                 if (consecutiveToolCalls > this.MAX_TOOL_CALLS) {
-                    toolHistory.push({
-                        tool_name: 'system_warning',
-                        content: `You used ${this.MAX_TOOL_CALLS} tool calls. Output <FINAL_PLAN> NOW.`,
-                        arguments: {}
-                    });
+                    currentPrompt += `\n\n[System Warning]: You used ${this.MAX_TOOL_CALLS} tool calls. Output <FINAL_PLAN> NOW.`;
                 }
             } else {
                 // Actor returned text instead of a tool call
                 const hasPlan = data.content.includes('<FINAL_PLAN>');
                 if (!hasPlan) {
                     // Actor failed to call a tool or output a plan. Treat as error to force retry.
-                    toolHistory.push({
-                        tool_name: 'system_error',
-                        content: `Error: You must either call a tool or output <FINAL_PLAN>...<\/FINAL_PLAN>. You output plain text: ${data.content}`,
-                        arguments: {}
-                    });
+                    currentPrompt += `\n\n[System Error]: Actor Agent failed to call a tool or output a plan. It output plain text:\n${data.content}\nError: You must either call a tool or output <FINAL_PLAN>...</FINAL_PLAN>.`;
                     consecutiveToolCalls++;
                     if (consecutiveToolCalls > this.MAX_TOOL_CALLS) break;
                     continue;
@@ -246,7 +228,7 @@ If you have enough context to write the implementation plan, explicitly tell the
                 ui.removeLoading();
                 ui.addStep('📝', 'Plan Ready', feedback ? 'Plan re-drafted' : 'Implementation plan drafted');
 
-                const contextSummary = ReActPlanner.buildContextSummary(collectedFiles, toolHistory);
+                const contextSummary = ReActPlanner.buildContextSummary(collectedFiles, toolHistory, reasoningHistory);
                 return { plan, contextSummary };
             }
         }
@@ -288,7 +270,7 @@ If you have enough context to write the implementation plan, explicitly tell the
     /**
      * Builds a context summary for the Critic to verify against.
      */
-    private static buildContextSummary(collectedFiles: string[], toolHistory: ToolResponse[]): string {
+    private static buildContextSummary(collectedFiles: string[], toolHistory: ToolResponse[], reasoningHistory: string[]): string {
         const parts: string[] = [];
 
         if (collectedFiles.length > 0) {
@@ -303,10 +285,7 @@ If you have enough context to write the implementation plan, explicitly tell the
             parts.push(`## Searches Performed\n${searchResults.join('\n')}`);
         }
 
-        const reasoning = toolHistory
-            .filter(t => t.tool_name === 'planner_reasoning')
-            .map(t => t.content)
-            .join('\n');
+        const reasoning = reasoningHistory.join('\n');
         if (reasoning) {
             parts.push(`## Planner Reasoning\n${reasoning.substring(0, 1000)}`);
         }
