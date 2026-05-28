@@ -208,35 +208,97 @@ body {
 /* Markdown Styles */
 .bot-message p { margin: 0 0 8px 0; }
 
-/* Agent Steps UI */
-.agent-steps-container {
-    margin-bottom: 8px;
-    color: var(--vscode-descriptionForeground);
+/* ---- Premium Details (Dropdowns) ---- */
+.premium-details {
+    margin: 12px 0;
+    border: 1px solid var(--vscode-widget-border);
+    border-radius: 8px;
+    background-color: var(--vscode-editorWidget-background);
+    overflow: hidden;
+    transition: border-color 0.2s, box-shadow 0.2s;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
 }
 
-.agent-steps-container summary {
+.premium-details:hover {
+    border-color: var(--vscode-focusBorder);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.premium-details summary {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 14px;
     cursor: pointer;
-    font-size: 0.9em;
-    font-weight: bold;
     user-select: none;
+    font-size: 0.9em;
+    font-weight: 600;
+    color: var(--vscode-editor-foreground);
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.02) 0%, rgba(255, 255, 255, 0) 100%);
     outline: none;
-    margin-bottom: 4px;
-    opacity: 0.8;
-    transition: opacity 0.2s;
+    list-style: none; /* Hide default arrow */
 }
 
-.agent-steps-container summary:hover {
-    opacity: 1;
+/* Custom chevron */
+.premium-details summary::-webkit-details-marker {
+    display: none;
+}
+
+.premium-details summary::before {
+    content: '';
+    display: inline-block;
+    width: 0;
+    height: 0;
+    border-style: solid;
+    border-width: 5px 0 5px 6px;
+    border-color: transparent transparent transparent var(--vscode-descriptionForeground);
+    transition: transform 0.2s ease;
+    margin-right: 4px;
+}
+
+.premium-details[open] summary::before {
+    transform: rotate(90deg);
+}
+
+.premium-details[open] summary {
+    border-bottom: 1px solid var(--vscode-widget-border);
+    background: rgba(0, 0, 0, 0.05);
+}
+
+.summary-icon {
+    font-size: 1.1em;
+}
+
+.summary-text {
+    flex-grow: 1;
+}
+
+.details-content {
+    padding: 12px 14px;
+    font-size: 0.9em;
+    color: var(--vscode-editor-foreground);
+    background-color: var(--vscode-editor-background);
+    line-height: 1.6;
+}
+
+.think-container {
+    border-left: 3px solid var(--vscode-terminal-ansiMagenta);
+}
+.think-container summary {
+    color: var(--vscode-terminal-ansiMagenta);
+}
+
+.agent-steps-container {
+    border-left: 3px solid var(--vscode-terminal-ansiBlue);
+}
+.agent-steps-container summary {
+    color: var(--vscode-terminal-ansiBlue);
 }
 
 .steps-content {
     display: flex;
     flex-direction: column;
-    gap: 4px;
-    padding-left: 12px;
-    margin-top: 6px;
-    margin-bottom: 8px;
-    border-left: 2px solid var(--vscode-widget-border);
+    gap: 6px;
 }
 
 .agent-step {
@@ -245,14 +307,36 @@ body {
     color: var(--vscode-descriptionForeground);
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: 8px;
+    padding: 6px 10px;
+    background-color: rgba(0, 0, 0, 0.1);
+    border-radius: 6px;
+    border: 1px solid transparent;
+    transition: border-color 0.2s, background-color 0.2s;
 }
 
-.agent-step code {
-    font-size: 1em;
-    background: transparent;
+.agent-step:hover {
+    background-color: var(--vscode-editorWidget-background);
+    border-color: var(--vscode-widget-border);
+}
+
+.step-icon {
+    font-size: 1.2em;
+}
+
+.step-action {
+    font-weight: 600;
+    color: var(--vscode-editor-foreground);
+}
+
+.step-target {
+    font-size: 0.95em;
+    background: var(--vscode-textCodeBlock-background);
     border: 1px solid var(--vscode-widget-border);
-    padding: 1px 4px;
+    padding: 2px 6px;
+    border-radius: 4px;
+    color: var(--vscode-textPreformat-foreground);
+    word-break: break-all;
 }
 .bot-message p:last-child { margin-bottom: 0; }
 pre {
