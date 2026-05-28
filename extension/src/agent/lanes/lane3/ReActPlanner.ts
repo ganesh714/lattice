@@ -50,12 +50,12 @@ You MUST address all points in this feedback. If the feedback mentions missing f
 
 ## HOW TO THINK
 
-Before each action, write a brief internal reasoning (2-3 sentences MAX) explaining:
-- What you just learned from the previous tool result
-- What gap remains in your understanding
-- What you will do next and WHY
+After each tool result, you will be asked to share your reasoning. This reasoning is displayed to the user as a thinking step (like Codex). Write 2-3 concise, insightful sentences explaining:
+- What you just LEARNED from the previous tool result (specific facts, not vague summaries)
+- What critical behaviors, patterns, or contracts you identified
+- What you need to investigate next and WHY
 
-Keep reasoning SHORT. Do NOT write paragraphs. Do NOT repeat information you already stated.
+Make your thinking INSIGHTFUL, not procedural. Instead of "I will now read the file", write "The project uses Flask with a single /api/chat endpoint returning JSON. I need to read the frontend to map the full request/response contract."
 
 ## EXPLORATION STRATEGY
 
@@ -84,7 +84,8 @@ Keep reasoning SHORT. Do NOT write paragraphs. Do NOT repeat information you alr
 5. Do NOT use edit_file_diff or execute_command during planning.
 6. Do NOT ask the user for file paths or permission. You are autonomous.
 7. Do NOT output <FINAL_PLAN> until you have read enough code to reference exact file paths, function names, and variable names.
-8. Keep your text responses to 2-3 concise sentences between tool calls. No verbose paragraphs.`;
+8. Your thinking is displayed to the user — make it insightful and concise (2-3 sentences). State what you LEARNED, not what you will do.
+9. NEVER search for patterns that don't exist in the codebase. Only search for identifiers you SAW in files you already read.`;
 
         const passiveContext = await ContextEngine.getPassiveContext(false);
         let currentPrompt = `User Request: ${prompt}${feedbackSection}\n\n${passiveContext}`;
@@ -205,6 +206,68 @@ Keep reasoning SHORT. Do NOT write paragraphs. Do NOT repeat information you alr
 
                 toolHistory.push({ tool_name: toolName, content: toolResultContent, arguments: toolArgs });
                 consecutiveToolCalls++;
+
+                // ── THINKING PHASE: Force model to reason before next action ──
+                // Separate LLM call with tools DISABLED so model MUST output text
+                if (consecutiveToolCalls <= this.MAX_TOOL_CALLS) {
+                    try {
+                        if (ui.isCancelled?.()) {
+                            throw new Error('Generation aborted by user.');
+                        }
+                        ui.setLoading('Thinking...');
+                        const thinkRequest: ChatRequest = {
+                            prompt: currentPrompt,
+                            model: model,
+                            workspace: workspacePath,
+                            tool_history: toolHistory,
+                            chat_history: history,
+                            disableTools: true
+                        };
+
+                        const thinkData = await ModelFactory.generateWithFallback(
+                            ContextEngine.pruneContext(thinkRequest),
+                            systemInstruction
+                        );
+
+                        if (thinkData.type === 'message') {
+                            const thinkText = thinkData.content
+                                .replace(/<\/?THINKING>/gi, '')
+                                .trim();
+
+                            // Check if model output the final plan during thinking
+                            if (thinkText.includes('<FINAL_PLAN>')) {
+                                const match = thinkText.match(/<FINAL_PLAN>([\s\S]*?)<\/FINAL_PLAN>/);
+                                const plan = match ? match[1].trim() : thinkText;
+                                const preplanText = thinkText.split('<FINAL_PLAN>')[0].trim();
+                                if (preplanText && ui.addMessage) {
+                                    ui.addMessage(preplanText, false);
+                                }
+                                ui.removeLoading();
+                                ui.addStep('📝', 'Plan Ready', feedback ? 'Plan re-drafted' : 'Implementation plan drafted');
+                                const contextSummary = ReActPlanner.buildContextSummary(collectedFiles, toolHistory);
+                                return { plan, contextSummary };
+                            }
+
+                            // Display thinking to user (Codex-style)
+                            if (thinkText) {
+                                ui.removeLoading();
+                                if (ui.addMessage) {
+                                    const lines = thinkText.split('\n').filter(l => l.trim());
+                                    const displayText = lines.slice(0, 4).join('\n');
+                                    ui.addMessage(displayText, false);
+                                }
+                                toolHistory.push({
+                                    tool_name: 'planner_reasoning',
+                                    content: thinkText,
+                                    arguments: {}
+                                });
+                            }
+                        }
+                    } catch (e: any) {
+                        if (e.message?.includes('aborted')) { throw e; }
+                        console.error('[Lattice] Thinking phase failed:', e.message);
+                    }
+                }
 
                 if (consecutiveToolCalls > this.MAX_TOOL_CALLS) {
                     toolHistory.push({
