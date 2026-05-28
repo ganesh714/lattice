@@ -17,6 +17,8 @@ import { ModelFactory } from '../../../models/ModelFactory';
 import { FileSystemTools } from '../../../tools/FileSystem';
 import { ContextEngine } from '../../ContextEngine';
 import { IAgentUI } from '../../AgentExecutor';
+import { FileIntelligenceAgent } from '../../fileIntelligence/FileIntelligenceAgent';
+import * as path from 'path';
 
 export class ReActPlanner {
     private static readonly MAX_TOOL_CALLS = 25;
@@ -58,8 +60,9 @@ If you have enough context to write the implementation plan, explicitly tell the
 
 ## EXPLORATION STRATEGY
 **Step 1 — MAP the project:** list_directory_tree on "." with depth 2-3.
-**Step 2 — READ FULL FILES:** Use read_full_file for relevant files. NEVER use read_file_chunk for files under 500 lines.
-**Step 3 — TARGETED SEARCH:** Search ONLY for specific identifiers you discovered. NEVER search for generic terms like "react", "frontend".
+**Step 2 — READ FILES:** Use read_full_file for files. NEVER use read_file_chunk for files under 500 lines.
+**Step 3 — LARGE FILES (>500 lines):** Do NOT read chunks blindly. Use analyze_large_file first to get the skeleton and symbol index, then use deep_dive_symbol or read_file_chunk to read specific sections.
+**Step 4 — TARGETED SEARCH:** Search ONLY for specific identifiers you discovered. NEVER search for generic terms like "react", "frontend".
 
 ## CRITICAL RULES
 1. If the Analyzer Agent suggests a tool call, MAKE THAT EXACT TOOL CALL. Do NOT output text.
@@ -197,6 +200,14 @@ If you have enough context to write the implementation plan, explicitly tell the
                         toolResultContent = await FileSystemTools.listDirectoryTree(workspacePath, targetPath, toolArgs.depth);
                     } else if (toolName === 'search_workspace_regex') {
                         toolResultContent = await FileSystemTools.searchWorkspaceRegex(toolArgs.pattern, toolArgs.relative_path);
+                    } else if (toolName === 'analyze_large_file') {
+                        const absolutePath = path.isAbsolute(targetPath) ? targetPath : path.join(workspacePath, targetPath);
+                        const result = await FileIntelligenceAgent.analyze(workspacePath, absolutePath, model);
+                        toolResultContent = FileIntelligenceAgent.formatSummary(result);
+                        collectedFiles.push(targetPath);
+                    } else if (toolName === 'deep_dive_symbol') {
+                        const absolutePath = path.isAbsolute(targetPath) ? targetPath : path.join(workspacePath, targetPath);
+                        toolResultContent = await FileIntelligenceAgent.fetchSymbol(workspacePath, absolutePath, model, toolArgs.symbol_name);
                     } else {
                         toolResultContent = `Error: Tool "${toolName}" is not permitted.`;
                     }
@@ -263,6 +274,12 @@ If you have enough context to write the implementation plan, explicitly tell the
         if (toolName === 'search_workspace_regex') {
             const scope = path !== '.' ? ` in ${path}` : '';
             return { icon: '🔍', action: 'Searching', detail: `"${args.pattern}"${scope}` };
+        }
+        if (toolName === 'analyze_large_file') {
+            return { icon: '🧠', action: 'Analyzing', detail: `${path} (semantic index)` };
+        }
+        if (toolName === 'deep_dive_symbol') {
+            return { icon: '🕵️', action: 'Deep Dive', detail: `${args.symbol_name} in ${path}` };
         }
         return { icon: '🔧', action: toolName, detail: JSON.stringify(args).substring(0, 80) };
     }
