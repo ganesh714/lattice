@@ -522,20 +522,11 @@
     // --- Initialization & State Persistence ---
     console.log('[Lattice Debug] Starting initialization...');
     
-    // Visible debug indicator
-    const debugIndicator = document.createElement('div');
-    debugIndicator.style.fontSize = '10px';
-    debugIndicator.style.color = 'var(--vscode-descriptionForeground)';
-    debugIndicator.style.padding = '4px 8px';
-    debugIndicator.style.opacity = '0.5';
-    debugIndicator.textContent = 'Lattice JS Active';
-    chatHistory.appendChild(debugIndicator);
+
 
     try {
         if (!vscode) {
             console.error('[Lattice Debug] vscode API is NOT available!');
-            debugIndicator.textContent = 'Lattice JS Warning: vscode API missing';
-            debugIndicator.style.color = 'orange';
         } else {
             // Load persisted settings from extension
             const saved = vscode.getState() || {};
@@ -563,7 +554,6 @@
         }
     } catch (e) {
         console.error('[Lattice Debug] Failed during initialization:', e);
-        debugIndicator.textContent = 'Lattice JS Error: ' + e.message;
     }
 
     // --- Helper functions for settings ---
