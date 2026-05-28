@@ -39,7 +39,12 @@ export class FileSystemTools {
     static async readFileChunk(workspacePath: string, relativePath: string, startLine: number, endLine: number): Promise<string> {
         const absolutePath = path.isAbsolute(relativePath) ? relativePath : path.join(workspacePath, relativePath);
         const targetUri = vscode.Uri.file(absolutePath);
-        const uint8Array = await vscode.workspace.fs.readFile(targetUri);
+        let uint8Array: Uint8Array;
+        try {
+            uint8Array = await vscode.workspace.fs.readFile(targetUri);
+        } catch (e: any) {
+            return `[Error: File not found or cannot be read at ${absolutePath}. Check the path and try again.]`;
+        }
         const content = new TextDecoder().decode(uint8Array);
         const lines = content.split('\n');
         const safeStartLine = Math.max(1, startLine || 1);
@@ -93,7 +98,12 @@ export class FileSystemTools {
     static async readFullFile(workspacePath: string, relativePath: string): Promise<string> {
         const absolutePath = path.isAbsolute(relativePath) ? relativePath : path.join(workspacePath, relativePath);
         const targetUri = vscode.Uri.file(absolutePath);
-        const uint8Array = await vscode.workspace.fs.readFile(targetUri);
+        let uint8Array: Uint8Array;
+        try {
+            uint8Array = await vscode.workspace.fs.readFile(targetUri);
+        } catch (e: any) {
+            return `[Error: File not found or cannot be read at ${absolutePath}. Check the path and try again.]`;
+        }
         const content = new TextDecoder().decode(uint8Array);
         const lines = content.split('\n');
 

@@ -141,6 +141,13 @@ If you have enough context to write the implementation plan, explicitly tell the
             } catch (e: any) {
                 currentPrompt += `\n\n[System Error during Actor Phase]: Actor API Error: ${e.message}\nFix your tool arguments.`;
                 consecutiveToolCalls++;
+                ui.addStep('❌', 'API Error', e.message.substring(0, 80));
+                
+                // If it's a catastrophic API error (e.g. 503, rate limit), don't silent loop forever
+                if (e.message.includes('503') || e.message.includes('429') || e.message.includes('model')) {
+                    throw e; 
+                }
+
                 if (consecutiveToolCalls > this.MAX_TOOL_CALLS) break;
                 continue;
             }
@@ -172,6 +179,7 @@ If you have enough context to write the implementation plan, explicitly tell the
                         content: `Error: You already made this exact tool call. Move on.`,
                         arguments: toolArgs
                     });
+                    ui.addStep('⚠️', 'Repeated Tool', `Agent tried to call ${toolName} again.`);
                     consecutiveToolCalls++;
                     if (consecutiveToolCalls > this.MAX_TOOL_CALLS) break;
                     continue;
