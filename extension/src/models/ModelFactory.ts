@@ -5,6 +5,8 @@ import { GroqClient } from "./GroqClient";
 import { OllamaClient } from "./OllamaClient";
 import { ChatRequest, AIResponse } from "../types/schemas";
 
+const llmTraceChannel = vscode.window.createOutputChannel("Lattice LLM Trace");
+
 export class ModelFactory {
     static getProvider(modelType: string): IAIProvider {
         const config = vscode.workspace.getConfiguration('lattice');
@@ -60,6 +62,16 @@ export class ModelFactory {
         for (const providerType of finalProviders) {
             try {
                 console.log(`[Lattice ModelFactory] Attempting provider "${providerType}"...`);
+                
+                llmTraceChannel.appendLine(`\n========== NEW LLM CALL (${providerType}) ==========`);
+                llmTraceChannel.appendLine(`Model: ${request.model}`);
+                llmTraceChannel.appendLine(`System Instruction:\n${systemInstruction}`);
+                llmTraceChannel.appendLine(`Prompt:\n${request.prompt}`);
+                if (request.tool_history && request.tool_history.length > 0) {
+                    llmTraceChannel.appendLine(`Tool History: ${request.tool_history.length} items`);
+                }
+                llmTraceChannel.appendLine(`====================================================\n`);
+
                 const provider = this.getProvider(providerType);
                 const response = await provider.generateResponse(request, systemInstruction);
                 console.log(`[Lattice ModelFactory] Provider "${providerType}" successfully generated a response! Response type: "${response.type}"`);

@@ -224,6 +224,12 @@ If you have enough context to write the implementation plan, explicitly tell the
                 }
 
                 toolHistory.push({ tool_name: toolName, content: toolResultContent, arguments: toolArgs });
+                
+                // Display the tool's return value in the UI
+                const safeOutput = toolResultContent.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                const resultMessage = `<tool_execution><summary><span class="summary-text">↳ Output</span></summary><div class="details-content"><pre style="max-height: 250px; overflow-y: auto; font-size: 0.85em; background: var(--vscode-editor-background); padding: 8px; border-radius: 4px;"><code>${safeOutput}</code></pre></div></tool_execution>`;
+                if (ui.addMessage) ui.addMessage(resultMessage, false);
+
                 consecutiveToolCalls++;
 
                 if (consecutiveToolCalls > this.MAX_TOOL_CALLS) {
