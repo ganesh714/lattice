@@ -1,5 +1,5 @@
-import { ModelFactory } from "../../../models/ModelFactory";
-import { ChatRequest } from "../../../types/schemas";
+import { ModelFactory } from "../../models/ModelFactory";
+import { ChatRequest } from "../../types/schemas";
 import { SupportedLanguage } from "./LanguageDetector";
 import { FileChunk } from "./Chunker";
 import { Symbol, SymbolIndex, SkeletonResult } from "./Types";
@@ -150,9 +150,9 @@ export async function deepDive(
   );
 
   if (!symbol) {
-    return \`Symbol "\${symbolName}" not found in index. Available: \${index.symbols
+    return `Symbol "${symbolName}" not found in index. Available: ${index.symbols
       .map((s) => s.name)
-      .join(", ")}\`;
+      .join(", ")}`;
   }
 
   const [startStr, endStr] = symbol.lines.split("-");
