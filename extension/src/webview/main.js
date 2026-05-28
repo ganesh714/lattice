@@ -135,18 +135,17 @@
                 chatHistory.scrollTop = chatHistory.scrollHeight;
                 break;
             case 'startBotMessage':
+                currentStepsDetails = document.createElement('details');
+                currentStepsDetails.className = 'agent-dropdown agent-steps-container';
+                currentStepsDetails.style.display = 'none';
+                currentStepsDetails.innerHTML = '<summary><span class="summary-text">Tool Usages</span></summary><div class="details-content steps-content"></div>';
+                chatHistory.appendChild(currentStepsDetails);
+
                 currentBotContainer = document.createElement('div');
                 currentBotContainer.className = 'message bot-message';
                 
-                currentStepsDetails = document.createElement('details');
-                currentStepsDetails.className = 'premium-details agent-steps-container';
-                currentStepsDetails.style.display = 'none';
-                currentStepsDetails.innerHTML = '<summary><span class="summary-icon">🛠️</span><span class="summary-text">Tool Usages & Steps</span></summary><div class="details-content steps-content"></div>';
-                
                 const finalContent = document.createElement('div');
                 finalContent.className = 'final-content';
-                
-                currentBotContainer.appendChild(currentStepsDetails);
                 currentBotContainer.appendChild(finalContent);
                 
                 chatHistory.appendChild(currentBotContainer);
@@ -171,7 +170,10 @@
                             content.style.color = 'var(--vscode-errorForeground)';
                             content.textContent = message.text;
                         } else {
-                            content.innerHTML = formatBotMessage(message.text);
+                            content.innerHTML = formatAndExtractThinkBlocks(message.text, currentBotContainer);
+                            if (!content.innerHTML.trim()) {
+                                currentBotContainer.style.display = 'none';
+                            }
                         }
                         currentBotContainer = null;
                         currentStepsDetails = null;
@@ -228,16 +230,31 @@
         }
     });
 
-    function formatBotMessage(text) {
+    function formatAndExtractThinkBlocks(text, containerElement) {
         if (!text) return '';
+        
         const parts = text.split(/(<think>[\s\S]*?<\/think>)/gi);
-        return parts.map(part => {
+        let mainContentHtml = '';
+        
+        parts.forEach(part => {
             if (part.toLowerCase().startsWith('<think>')) {
                 const innerText = part.substring(7, part.length - 8);
-                return `<details class="premium-details think-container"><summary><span class="summary-icon">🧠</span><span class="summary-text">Thinking Process</span></summary><div class="details-content">${marked.parse(innerText)}</div></details>`;
+                
+                const thinkDetails = document.createElement('details');
+                thinkDetails.className = 'agent-dropdown think-container';
+                thinkDetails.innerHTML = `<summary><span class="summary-text">Thought Process</span></summary><div class="details-content">${marked.parse(innerText)}</div>`;
+                
+                if (containerElement && containerElement.parentNode) {
+                    containerElement.parentNode.insertBefore(thinkDetails, containerElement);
+                } else {
+                    mainContentHtml += part;
+                }
+            } else {
+                mainContentHtml += part;
             }
-            return marked.parse(part);
-        }).join('');
+        });
+        
+        return marked.parse(mainContentHtml);
     }
 
     function renderDebugPanel(chatHistoryData, toolHistoryData) {
@@ -279,17 +296,21 @@
             msgDiv.style.color = 'var(--vscode-errorForeground)';
         }
         
+        chatHistory.appendChild(msgDiv);
+        
         if (isLoading) {
             msgDiv.classList.add('loading');
             msgDiv.id = 'loading-indicator'; 
             msgDiv.textContent = text;
         } else if (!isUser) {
-            msgDiv.innerHTML = formatBotMessage(text);
+            msgDiv.innerHTML = formatAndExtractThinkBlocks(text, msgDiv);
+            if (!msgDiv.innerHTML.trim()) {
+                msgDiv.style.display = 'none';
+            }
         } else {
             msgDiv.textContent = text;
         }
         
-        chatHistory.appendChild(msgDiv);
         chatHistory.scrollTop = chatHistory.scrollHeight;
     }
 
