@@ -50,7 +50,7 @@ You MUST address all points in this feedback. If the feedback mentions missing f
 You CANNOT call tools yourself, and you MUST NOT output a <FINAL_PLAN>.
 Write 2-4 insightful sentences explaining:
 1. What facts you just learned from the recent tool results.
-2. What specific file, identifier, or directory the Acting Agent needs to investigate next.
+2. What specific file, identifier, or directory the Acting Agent needs to investigate next. NEVER guess filenames—ONLY suggest files you have explicitly seen in the list_directory_tree output.
 If you have enough context to write the implementation plan, explicitly tell the Acting Agent to output the <FINAL_PLAN>.`;
 
         const actInstruction = `You are the Acting Agent. Your job is to execute the action suggested by the Analyzer Agent (found in the most recent "planner_reasoning" in your tool history).
@@ -104,7 +104,7 @@ If you have enough context to write the implementation plan, explicitly tell the
                         // Wrap the ENTIRE output so it goes cleanly into the single "Thought Process" dropdown
                         const thinkUiText = `<think>\n${text}\n</think>`;
                         if (ui.addMessage) ui.addMessage(thinkUiText, false);
-                        
+
                         toolHistory.push({
                             tool_name: 'planner_reasoning',
                             content: text,
@@ -192,7 +192,7 @@ If you have enough context to write the implementation plan, explicitly tell the
 
                 // We don't need to print reasoning here because the Analyzer already did.
                 // Format the tool execution as a clean dropdown matching the Thought Process UI.
-                const chatMessage = `<details class="agent-dropdown tool-container" open><summary><span class="summary-text">${toolDescription.icon} Ran ${toolDescription.action}</span></summary><div class="details-content"><code>${toolDescription.detail}</code></div></details>`;
+                const chatMessage = `<tool_execution><summary><span class="summary-text">${toolDescription.icon} Ran ${toolDescription.action}</span></summary><div class="details-content"><code>${toolDescription.detail}</code></div></tool_execution>`;
                 if (ui.addMessage) ui.addMessage(chatMessage, false);
 
                 let toolResultContent = '';
