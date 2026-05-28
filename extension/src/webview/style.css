@@ -205,139 +205,95 @@ body {
     color: var(--vscode-editorWidget-foreground);
 }
 
-/* Markdown Styles */
-.bot-message p { margin: 0 0 8px 0; }
-
-/* ---- Premium Details (Dropdowns) ---- */
-.premium-details {
-    margin: 12px 0;
-    border: 1px solid var(--vscode-widget-border);
-    border-radius: 8px;
-    background-color: var(--vscode-editorWidget-background);
-    overflow: hidden;
-    transition: border-color 0.2s, box-shadow 0.2s;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+/* ---- Minimal Dropdown for Side Panel (Agent Steps & Thinking) ---- */
+.agent-dropdown {
+    margin: 4px 0;
+    width: 100%;
 }
 
-.premium-details:hover {
-    border-color: var(--vscode-focusBorder);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-}
-
-.premium-details summary {
+.agent-dropdown summary {
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 10px 14px;
+    gap: 6px;
+    padding: 4px 8px;
     cursor: pointer;
     user-select: none;
-    font-size: 0.9em;
-    font-weight: 600;
-    color: var(--vscode-editor-foreground);
-    background: linear-gradient(180deg, rgba(255, 255, 255, 0.02) 0%, rgba(255, 255, 255, 0) 100%);
-    outline: none;
+    font-size: 0.85em;
+    color: var(--vscode-descriptionForeground);
+    border-radius: 4px;
+    transition: background-color 0.2s, color 0.2s;
     list-style: none; /* Hide default arrow */
+    outline: none;
 }
 
-/* Custom chevron */
-.premium-details summary::-webkit-details-marker {
+.agent-dropdown summary:hover {
+    background-color: rgba(128, 128, 128, 0.1);
+    color: var(--vscode-editor-foreground);
+}
+
+.agent-dropdown summary::-webkit-details-marker {
     display: none;
 }
 
-.premium-details summary::before {
+/* Custom chevron */
+.agent-dropdown summary::before {
     content: '';
     display: inline-block;
     width: 0;
     height: 0;
     border-style: solid;
-    border-width: 5px 0 5px 6px;
-    border-color: transparent transparent transparent var(--vscode-descriptionForeground);
+    border-width: 4px 0 4px 5px;
+    border-color: transparent transparent transparent currentColor;
     transition: transform 0.2s ease;
-    margin-right: 4px;
+    opacity: 0.7;
 }
 
-.premium-details[open] summary::before {
+.agent-dropdown[open] summary::before {
     transform: rotate(90deg);
 }
 
-.premium-details[open] summary {
-    border-bottom: 1px solid var(--vscode-widget-border);
-    background: rgba(0, 0, 0, 0.05);
+.agent-dropdown .details-content {
+    padding: 6px 10px 6px 20px;
+    font-size: 0.85em;
+    color: var(--vscode-descriptionForeground);
+    max-height: 300px;
+    overflow-y: auto;
 }
 
-.summary-icon {
-    font-size: 1.1em;
-}
-
-.summary-text {
-    flex-grow: 1;
-}
-
-.details-content {
-    padding: 12px 14px;
-    font-size: 0.9em;
-    color: var(--vscode-editor-foreground);
-    background-color: var(--vscode-editor-background);
-    line-height: 1.6;
-}
-
-.think-container {
-    border-left: 3px solid var(--vscode-terminal-ansiMagenta);
-}
-.think-container summary {
-    color: var(--vscode-terminal-ansiMagenta);
-}
-
-.agent-steps-container {
-    border-left: 3px solid var(--vscode-terminal-ansiBlue);
-}
-.agent-steps-container summary {
-    color: var(--vscode-terminal-ansiBlue);
-}
-
-.steps-content {
+/* Tool steps list */
+.agent-dropdown .steps-content {
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: 4px;
 }
 
 .agent-step {
     font-family: var(--vscode-editor-font-family);
-    font-size: 0.9em;
-    color: var(--vscode-descriptionForeground);
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 6px 10px;
-    background-color: rgba(0, 0, 0, 0.1);
-    border-radius: 6px;
-    border: 1px solid transparent;
-    transition: border-color 0.2s, background-color 0.2s;
+    gap: 6px;
+    padding: 2px 0;
+    color: var(--vscode-descriptionForeground);
 }
 
-.agent-step:hover {
-    background-color: var(--vscode-editorWidget-background);
-    border-color: var(--vscode-widget-border);
+.agent-step .step-icon {
+    font-size: 1.1em;
 }
 
-.step-icon {
-    font-size: 1.2em;
+.agent-step .step-action {
+    font-weight: normal;
+    opacity: 0.8;
 }
 
-.step-action {
-    font-weight: 600;
-    color: var(--vscode-editor-foreground);
-}
-
-.step-target {
-    font-size: 0.95em;
-    background: var(--vscode-textCodeBlock-background);
-    border: 1px solid var(--vscode-widget-border);
-    padding: 2px 6px;
-    border-radius: 4px;
+.agent-step .step-target {
+    font-size: 0.9em;
+    background: transparent;
+    border: none;
+    padding: 0;
     color: var(--vscode-textPreformat-foreground);
     word-break: break-all;
 }
+
 .bot-message p:last-child { margin-bottom: 0; }
 pre {
     background-color: var(--vscode-textCodeBlock-background);
