@@ -69,6 +69,7 @@ export class OllamaClient implements IAIProvider {
         let fetchImpl: any = (globalThis as any).fetch;
         if (!fetchImpl) {
             try {
+                // @ts-ignore
                 const nodeFetch = await import('node-fetch');
                 fetchImpl = nodeFetch.default || nodeFetch;
             } catch (e) {
