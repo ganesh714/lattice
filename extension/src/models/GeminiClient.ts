@@ -38,7 +38,7 @@ export class GeminiClient implements IAIProvider {
             const formattedTools = tools.map(tool => ({
                 name: tool.name,
                 description: tool.description || "",
-                inputSchema: {
+                parameters: {
                     type: tool.parameters.type || "object",
                     properties: tool.parameters.properties || {},
                     required: tool.parameters.required || []
