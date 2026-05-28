@@ -326,19 +326,20 @@ export class LatticeChatProvider implements vscode.WebviewViewProvider, IAgentUI
     private _getHtmlForWebview(webview: vscode.Webview) {
         const webviewPath = vscode.Uri.joinPath(this._extensionUri, 'src', 'webview');
         const htmlPath = path.join(webviewPath.fsPath, 'index.html');
-        const cssPath = path.join(webviewPath.fsPath, 'style.css');
+        const cssPathOnDisk = vscode.Uri.joinPath(webviewPath, 'style.css');
         const scriptPathOnDisk = vscode.Uri.joinPath(webviewPath, 'main.js');
 
         let htmlContent = fs.readFileSync(htmlPath, 'utf8');
-        const cssContent = fs.readFileSync(cssPath, 'utf8');
+        const cssUri = webview.asWebviewUri(cssPathOnDisk);
         const scriptUri = webview.asWebviewUri(scriptPathOnDisk);
         const nonce = this.getNonce();
 
         console.log('[Lattice Provider Debug] Script URI:', scriptUri.toString());
+        console.log('[Lattice Provider Debug] CSS URI:', cssUri.toString());
         console.log('[Lattice Provider Debug] Nonce:', nonce);
         console.log('[Lattice Provider Debug] CSP Source:', webview.cspSource);
 
-        htmlContent = htmlContent.replace('{{inlineStyles}}', cssContent);
+        htmlContent = htmlContent.replace(/{{cssUri}}/g, cssUri.toString());
         htmlContent = htmlContent.replace(/{{scriptUri}}/g, scriptUri.toString());
         htmlContent = htmlContent.replace(/{{nonce}}/g, nonce);
         htmlContent = htmlContent.replace(/{{cspSource}}/g, webview.cspSource);
