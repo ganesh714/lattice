@@ -56,7 +56,7 @@ Example:
     const filePath = path.resolve(args[0]);
     const symbolIndex = args.indexOf("--symbol");
     const symbolName = symbolIndex !== -1 ? args[symbolIndex + 1] : undefined;
-    const model = process.env.GROQ_API_KEY ? "groq:llama3-8b-8192" : "gemini-3.5-flash"; // Default test model
+    const model = process.env.GROQ_API_KEY ? "groq:llama-3.1-8b-instant" : "gemini-3.5-flash"; // Default test model
     const workspacePath = path.dirname(filePath);
 
     console.log(`🚀 Starting FileIntelligenceAgent Test`);
