@@ -50,13 +50,37 @@ const CORE_TOOLS = [
     },
     {
         name: "search_workspace_regex",
-        description: "Performs a regex-based search across the workspace. Use simple patterns such as 'server', 'url', 'localhost', 'http', or a variable name. Avoid complex escaped URL regexes; use read_file_chunk when the active file path and line range are known.",
+        description: "Performs a regex search across the workspace OR within a specific file. VERY USEFUL for large files: search for '<script', 'function', or 'class' inside a specific file to find relevant line numbers before using read_file_chunk.",
         parameters: {
             type: "object",
             properties: {
-                pattern: { type: "string", description: "The regex pattern to search for." }
+                pattern: { type: "string", description: "The regex pattern to search for." },
+                relative_path: { type: "string", description: "Optional. The specific file to search inside." }
             },
             required: ["pattern"]
+        }
+    },
+    {
+        name: "analyze_large_file",
+        description: "Uses FileIntelligenceAgent to semantically analyze a large file (over 500 lines). Extracts a high-level skeleton and symbol index (functions, classes, etc.) to help you understand the file structure without reading every line.",
+        parameters: {
+            type: "object",
+            properties: {
+                relative_path: { type: "string", description: "The file path to analyze." }
+            },
+            required: ["relative_path"]
+        }
+    },
+    {
+        name: "deep_dive_symbol",
+        description: "Fetches a deep dive analysis of a specific symbol from a previously analyzed large file. You MUST call analyze_large_file first.",
+        parameters: {
+            type: "object",
+            properties: {
+                relative_path: { type: "string", description: "The file path." },
+                symbol_name: { type: "string", description: "The exact symbol name to deep dive into." }
+            },
+            required: ["relative_path", "symbol_name"]
         }
     },
     {
