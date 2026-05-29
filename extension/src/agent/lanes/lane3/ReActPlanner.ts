@@ -41,6 +41,7 @@ export class ReActPlanner {
         let collectedFiles: string[] = [];
         let previousToolCalls: string[] = []; // Track to prevent duplicates
         let reasoningHistory: string[] = [];
+        let discoveries: string[] = []; // Running scratchpad of confirmed facts
 
         const feedbackSection = feedback
             ? `\n\n--- FEEDBACK FROM PREVIOUS REVIEW ---
@@ -49,12 +50,39 @@ You MUST address all points in this feedback. If the feedback mentions missing f
 --- END FEEDBACK ---`
             : '';
 
-        const thinkInstruction = `You are the Analyzer Agent. Your job is to review the exploration history and decide the exact next step.
-You CANNOT call tools yourself, and you MUST NOT output a <FINAL_PLAN>.
-Write 2-4 insightful sentences explaining:
-1. What facts you just learned from the recent tool results.
-2. What specific file, identifier, or directory the Acting Agent needs to investigate next. NEVER guess filenames—ONLY suggest files you have explicitly seen in the list_directory_tree output.
-If you have enough context to write the implementation plan, explicitly tell the Acting Agent to output the <FINAL_PLAN>.`;
+        const thinkInstruction = `You are the Analyzer Agent. Your ONLY job is to reason about what to investigate next.
+You CANNOT call tools. You MUST NOT output a <FINAL_PLAN>. Output reasoning text only.
+
+## HOW TO REASON (follow this exact structure every turn)
+
+**STEP 1 — ANOMALY CHECK**
+Scan the latest tool output for mismatches against what you expected or what was seen in earlier results.
+Ask yourself: "Does this contradict something I saw before?" or "Is something missing that should be here?"
+Examples of anomalies to catch:
+- A skeleton showed 2 inputs but the function body references 4 DOM element IDs → inputs are undiscovered
+- A file was listed in the directory tree but never read → blind spot
+- A function references an import not yet explored → dependency chain incomplete
+- An identifier in the plan doesn't appear anywhere in tool outputs → likely hallucinated
+
+**STEP 2 — KNOWLEDGE GAP INVENTORY**
+List (briefly) what you still DON'T know that is necessary to write an accurate plan.
+Be specific: not "need more context" but "don't know what inputs the form has beyond \`total\` and \`attended\`".
+
+**STEP 3 — NEXT ACTION DECISION**
+State exactly ONE action for the Acting Agent to take next, with the precise file path or symbol name.
+ONLY reference files/symbols you have explicitly seen in tool outputs. Never guess.
+Justify WHY this action closes a specific gap from Step 2.
+
+**STEP 4 — READY CHECK**
+If and ONLY if ALL of the following are true, tell the Acting Agent to output <FINAL_PLAN>:
+- Every file path you plan to reference has been read (not just listed)
+- Every function/variable name in the plan was seen in actual tool output
+- No anomalies remain unresolved
+- Dependencies and imports are understood
+
+## FORMAT
+Write plain prose following the 4 steps above. Be direct and specific. 3-6 sentences total.
+Do NOT start with "I have learned..." — start with what's wrong or missing.`;
 
         const actInstruction = `You are the Acting Agent. Your job is to execute the action suggested by the Analyzer Agent (found in the "[Analyzer Agent Reasoning]" block at the end of your prompt).
 
@@ -80,8 +108,17 @@ If you have enough context to write the implementation plan, explicitly tell the
 
             // ─── 1. ANALYZER AGENT (Thinking Phase) ───
             ui.setLoading(feedback ? 'Thinking about next step...' : 'Analyzing context...');
+            const thinkStartTime = Date.now();
+
+            // Build a running scratchpad of confirmed facts for the Analyzer to reason against.
+            // This prevents the model from only looking at the last tool output and ignoring
+            // earlier discoveries (which causes the shallow "I have learned..." pattern).
+            const discoveriesScratchpad = discoveries.length > 0
+                ? `\n\n## CONFIRMED FACTS SO FAR (from all tool calls)\n${discoveries.map((d, i) => `${i + 1}. ${d}`).join('\n')}`
+                : '';
+
             const thinkRequest: ChatRequest = {
-                prompt: currentPrompt,
+                prompt: currentPrompt + discoveriesScratchpad,
                 model: model,
                 workspace: workspacePath,
                 tool_history: toolHistory,
@@ -94,6 +131,7 @@ If you have enough context to write the implementation plan, explicitly tell the
                     ContextEngine.pruneContext(thinkRequest),
                     thinkInstruction
                 );
+                const thinkDuration = ((Date.now() - thinkStartTime) / 1000).toFixed(1);
 
                 if (thinkData.type === 'message') {
                     // Strip both <THINKING> and <think> tags so we can safely wrap the ENTIRE output
@@ -106,7 +144,7 @@ If you have enough context to write the implementation plan, explicitly tell the
                     if (text) {
                         ui.removeLoading();
                         // Wrap the ENTIRE output so it goes cleanly into the single "Thought Process" dropdown
-                        const thinkUiText = `<think>\n${text}\n</think>`;
+                        const thinkUiText = `<think time="${thinkDuration}">\n${text}\n</think>`;
                         if (ui.addMessage) ui.addMessage(thinkUiText, false);
 
                         reasoningHistory.push(text);
@@ -123,6 +161,7 @@ If you have enough context to write the implementation plan, explicitly tell the
 
             // ─── 2. ACTING AGENT (Tool Phase) ───
             ui.setLoading('Executing tool...');
+            const actStartTime = Date.now();
             const actRequest: ChatRequest = {
                 prompt: currentPrompt,
                 model: model,
@@ -186,6 +225,7 @@ If you have enough context to write the implementation plan, explicitly tell the
                 }
                 previousToolCalls.push(callSignature);
 
+                const actDuration = ((Date.now() - actStartTime) / 1000).toFixed(1);
                 ui.removeLoading();
                 const toolDescription = ReActPlanner.describeToolCall(toolName, toolArgs);
                 ui.addStep(toolDescription.icon, toolDescription.action, toolDescription.detail);
@@ -193,10 +233,11 @@ If you have enough context to write the implementation plan, explicitly tell the
 
                 // We don't need to print reasoning here because the Analyzer already did.
                 // Format the tool execution as a clean dropdown matching the Thought Process UI.
-                const chatMessage = `<tool_execution><summary><span class="summary-text">${toolDescription.icon} Ran ${toolDescription.action}</span></summary><div class="details-content"><code>${toolDescription.detail}</code></div></tool_execution>`;
+                const chatMessage = `<tool_execution><summary><span class="summary-text">${toolDescription.icon} Ran ${toolDescription.action} <span style="opacity:0.7; font-size:0.9em; font-weight:normal;">(⏱️ ${actDuration}s)</span></span></summary><div class="details-content"><code>${toolDescription.detail}</code></div></tool_execution>`;
                 if (ui.addMessage) ui.addMessage(chatMessage, false);
 
                 let toolResultContent = '';
+                const toolStartTime = Date.now();
                 try {
                     if (toolName === 'read_full_file') {
                         toolResultContent = await FileSystemTools.readFullFile(workspacePath, targetPath);
@@ -223,11 +264,42 @@ If you have enough context to write the implementation plan, explicitly tell the
                     toolResultContent = `Error executing ${toolName}: ${err.message}`;
                 }
 
+                const toolDuration = ((Date.now() - toolStartTime) / 1000).toFixed(1);
+
                 toolHistory.push({ tool_name: toolName, content: toolResultContent, arguments: toolArgs });
+
+                // Extract key confirmed facts for the Analyzer's scratchpad.
+                // We record what was actually found so the Analyzer can reason
+                // against the full picture, not just the most recent output.
+                if (toolName === 'read_full_file' || toolName === 'read_file_chunk') {
+                    discoveries.push(`Read "${targetPath}" — content is in tool history`);
+                } else if (toolName === 'analyze_large_file') {
+                    // Extract symbol names from the summary so the Analyzer knows what's findable
+                    const symbolMatches = toolResultContent.match(/\[(?:function|class|variable|method)\] (\w+)/g);
+                    if (symbolMatches) {
+                        discoveries.push(`"${targetPath}" symbols: ${symbolMatches.slice(0, 10).join(', ')}`);
+                    }
+                } else if (toolName === 'deep_dive_symbol') {
+                    const symbolName = toolArgs.symbol_name || '';
+                    // Extract DOM element IDs, variable names, imports referenced in the symbol
+                    const domIds = [...toolResultContent.matchAll(/getElementById\(['"]([\w]+)['"]\)/g)].map(m => m[1]);
+                    const imports = [...toolResultContent.matchAll(/import\s+.*?from\s+['"]([^'"]+)['"]/g)].map(m => m[1]);
+                    if (domIds.length > 0) discoveries.push(`"${symbolName}" references DOM IDs: ${domIds.join(', ')}`);
+                    if (imports.length > 0) discoveries.push(`"${symbolName}" imports: ${imports.join(', ')}`);
+                    discoveries.push(`Read symbol "${symbolName}" from "${targetPath}"`);
+                } else if (toolName === 'search_workspace_regex') {
+                    const matchCount = (toolResultContent.match(/\n/g) || []).length;
+                    discoveries.push(`Search "${toolArgs.pattern}": ${matchCount} match(es) found`);
+                } else if (toolName === 'list_directory_tree') {
+                    const fileMatches = [...toolResultContent.matchAll(/([^\s]+\.\w+)/g)].map(m => m[1]);
+                    if (fileMatches.length > 0) {
+                        discoveries.push(`Directory "${targetPath || '.'}" contains: ${fileMatches.slice(0, 15).join(', ')}`);
+                    }
+                }
                 
                 // Display the tool's return value in the UI
                 const safeOutput = toolResultContent.replace(/</g, '&lt;').replace(/>/g, '&gt;');
-                const resultMessage = `<tool_execution><summary><span class="summary-text">↳ Output</span></summary><div class="details-content"><pre style="max-height: 250px; overflow-y: auto; font-size: 0.85em; background: var(--vscode-editor-background); padding: 8px; border-radius: 4px;"><code>${safeOutput}</code></pre></div></tool_execution>`;
+                const resultMessage = `<tool_execution><summary><span class="summary-text">↳ Output <span style="opacity:0.7; font-size:0.9em; font-weight:normal;">(⏱️ ${toolDuration}s)</span></span></summary><div class="details-content"><pre style="max-height: 250px; overflow-y: auto; font-size: 0.85em; background: var(--vscode-editor-background); padding: 8px; border-radius: 4px;"><code>${safeOutput}</code></pre></div></tool_execution>`;
                 if (ui.addMessage) ui.addMessage(resultMessage, false);
 
                 consecutiveToolCalls++;
@@ -253,7 +325,7 @@ If you have enough context to write the implementation plan, explicitly tell the
                 ui.removeLoading();
                 ui.addStep('📝', 'Plan Ready', feedback ? 'Plan re-drafted' : 'Implementation plan drafted');
 
-                const contextSummary = ReActPlanner.buildContextSummary(collectedFiles, toolHistory, reasoningHistory);
+                const contextSummary = ReActPlanner.buildContextSummary(collectedFiles, toolHistory, reasoningHistory, discoveries);
                 return { plan, contextSummary };
             }
         }
@@ -301,12 +373,16 @@ If you have enough context to write the implementation plan, explicitly tell the
     /**
      * Builds a context summary for the Critic to verify against.
      */
-    private static buildContextSummary(collectedFiles: string[], toolHistory: ToolResponse[], reasoningHistory: string[]): string {
+    private static buildContextSummary(collectedFiles: string[], toolHistory: ToolResponse[], reasoningHistory: string[], discoveries: string[] = []): string {
         const parts: string[] = [];
 
         if (collectedFiles.length > 0) {
             const uniqueFiles = [...new Set(collectedFiles)];
             parts.push(`## Files Read\n${uniqueFiles.map(f => `- ${f}`).join('\n')}`);
+        }
+
+        if (discoveries.length > 0) {
+            parts.push(`## Confirmed Facts (extracted during exploration)\n${discoveries.map((d, i) => `${i + 1}. ${d}`).join('\n')}`);
         }
 
         const searchResults = toolHistory
