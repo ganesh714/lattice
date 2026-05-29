@@ -283,7 +283,14 @@ Do NOT start with "I have learned..." — start with what's wrong or missing.`;
 
                 const toolDuration = ((Date.now() - toolStartTime) / 1000).toFixed(1);
 
-                toolHistory.push({ tool_name: toolName, content: toolResultContent, arguments: toolArgs });
+                // Cap tool result stored in toolHistory to prevent context explosion.
+                // The full result is already shown in the UI above — toolHistory is only
+                // used by the LLM in subsequent prompts, so we can safely truncate.
+                const MAX_TOOL_RESULT_CHARS = 4000;
+                const storedContent = toolResultContent.length > MAX_TOOL_RESULT_CHARS
+                    ? toolResultContent.substring(0, MAX_TOOL_RESULT_CHARS) + '\n\n[... truncated to save tokens. Key facts extracted to CONFIRMED FACTS above.]'
+                    : toolResultContent;
+                toolHistory.push({ tool_name: toolName, content: storedContent, arguments: toolArgs });
 
                 // Extract key confirmed facts for the Analyzer's scratchpad.
                 // We record what was actually found so the Analyzer can reason
