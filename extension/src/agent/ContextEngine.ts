@@ -19,8 +19,8 @@ export class ContextEngine {
         // Deep clone to avoid mutating the original object
         const newRequest = JSON.parse(JSON.stringify(request)) as ChatRequest;
         
-        // 1. Truncate individual tool results to a sane limit (~1k tokens)
-        const MAX_TOOL_CHARS = 4000; 
+        // 1. Truncate individual tool results to a sane limit (~2.5k tokens)
+        const MAX_TOOL_CHARS = 10000; 
         for (const toolRes of newRequest.tool_history) {
             if (toolRes.content.length > MAX_TOOL_CHARS) {
                 toolRes.content = toolRes.content.substring(0, MAX_TOOL_CHARS) + 
@@ -39,14 +39,6 @@ export class ContextEngine {
         // We keep at least the last message if possible
         while (calculateTotal() > maxTokens && newRequest.chat_history.length > 1) {
             newRequest.chat_history.shift();
-        }
-
-        // 3. Drop oldest tool history entries if STILL over budget.
-        // Keep at least the 2 most recent tool results so the Analyzer/Actor
-        // can reference what was just done. Older results are already captured
-        // in the discoveries scratchpad.
-        while (calculateTotal() > maxTokens && newRequest.tool_history.length > 2) {
-            newRequest.tool_history.shift();
         }
 
         return newRequest;
