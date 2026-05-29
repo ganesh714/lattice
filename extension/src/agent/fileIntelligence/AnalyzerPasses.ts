@@ -21,7 +21,10 @@ async function callModel(
   };
   const response = await ModelFactory.generateWithFallback(request, systemInstruction);
   if (response.type === "message") {
-    return response.content;
+    // Strip <think>...</think> tags — models like Qwen3 emit chain-of-thought
+    // reasoning inside these tags, which leaks into tool results and wastes
+    // hundreds of tokens when stored in toolHistory.
+    return response.content.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
   }
   return "";
 }
