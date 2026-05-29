@@ -3,7 +3,7 @@ import { TextDecoder } from "util";
 import { detectLanguage } from "./LanguageDetector";
 import { chunkFile } from "./Chunker";
 import { SymbolIndex, AnalysisResult, Symbol } from "./Types";
-import { extractSkeleton, buildSymbolIndex, deepDive } from "./AnalyzerPasses";
+import { extractSkeleton, buildSymbolIndex, extractSymbolCode } from "./AnalyzerPasses";
 
 export class FileIntelligenceAgent {
   // Shared cache across the extension session
@@ -11,6 +11,11 @@ export class FileIntelligenceAgent {
 
   /**
    * Full multi-pass analysis of a file.
+   * 
+   * Pass 1: Skeleton — uses VS Code DocumentSymbolProvider (instant, free).
+   *         Falls back to LLM only if the provider returns nothing.
+   * Pass 2: Symbol Index — enriches with per-chunk LLM indexing for multi-chunk files.
+   * Pass 3: (optional) Raw code extraction for a specific symbol — NO LLM call.
    */
   static async analyze(
     workspacePath: string,
@@ -30,7 +35,7 @@ export class FileIntelligenceAgent {
     const language = detectLanguage(filePath);
     const chunks = chunkFile(content, language, options.chunkSize ?? 300);
 
-    // Pass 1: Skeleton
+    // Pass 1: Skeleton (DocumentSymbolProvider first, LLM fallback)
     const skeleton = await extractSkeleton(workspacePath, modelName, filePath, content, language);
 
     // Pass 2: Symbol Index
@@ -39,16 +44,19 @@ export class FileIntelligenceAgent {
 
     const result: AnalysisResult = { file: filePath, language, skeleton, index };
 
-    // Pass 3 (optional): Deep dive
+    // Pass 3 (optional): Raw code extraction — NO LLM call
     if (options.deepDiveSymbol) {
-      result.deepDive = await deepDive(workspacePath, modelName, content, language, options.deepDiveSymbol, index);
+      result.deepDive = extractSymbolCode(content, language, options.deepDiveSymbol, index);
     }
 
     return result;
   }
 
   /**
-   * Fetch only a specific symbol from an already-indexed file.
+   * Fetch only a specific symbol's raw code from an already-indexed file.
+   * 
+   * Returns the actual source code with line numbers — NO LLM call.
+   * The caller (ReAct Planner) is already an LLM that can analyze the code itself.
    */
   static async fetchSymbol(
     workspacePath: string,
@@ -66,7 +74,7 @@ export class FileIntelligenceAgent {
     const content = new TextDecoder().decode(uint8Array);
     const language = detectLanguage(filePath);
 
-    return await deepDive(workspacePath, modelName, content, language, symbolName, index);
+    return extractSymbolCode(content, language, symbolName, index);
   }
 
   static getCachedIndex(filePath: string): SymbolIndex | undefined {
