@@ -233,25 +233,29 @@
     function formatAndExtractThinkBlocks(text, containerElement) {
         if (!text) return '';
         
-        const parts = text.split(/(<(?:think|tool_execution)>[\s\S]*?<\/(?:think|tool_execution)>)/gi);
+        const parts = text.split(/(<(?:think|tool_execution)(?:\s+[^>]*)?>[\s\S]*?<\/(?:think|tool_execution)>)/gi);
         let mainContentHtml = '';
         
         parts.forEach(part => {
             const lowerPart = part.toLowerCase();
-            if (lowerPart.startsWith('<think>')) {
-                const innerText = part.substring(7, part.length - 8);
+            if (lowerPart.startsWith('<think')) {
+                const timeMatch = part.match(/<think\s+time="([^"]+)"/i);
+                const timeStr = timeMatch ? ` <span style="opacity:0.7; font-size:0.9em; font-weight:normal;">(⏱️ ${timeMatch[1]}s)</span>` : '';
+                const startIdx = part.indexOf('>') + 1;
+                const innerText = part.substring(startIdx, part.length - 8);
                 
                 const thinkDetails = document.createElement('details');
                 thinkDetails.className = 'agent-dropdown think-container';
-                thinkDetails.innerHTML = `<summary><span class="summary-text">Thought Process</span></summary><div class="details-content">${marked.parse(innerText)}</div>`;
+                thinkDetails.innerHTML = `<summary><span class="summary-text">Thought Process${timeStr}</span></summary><div class="details-content">${marked.parse(innerText)}</div>`;
                 
                 if (containerElement && containerElement.parentNode) {
                     containerElement.parentNode.insertBefore(thinkDetails, containerElement);
                 } else {
                     mainContentHtml += part;
                 }
-            } else if (lowerPart.startsWith('<tool_execution>')) {
-                const innerText = part.substring(16, part.length - 17);
+            } else if (lowerPart.startsWith('<tool_execution')) {
+                const startIdx = part.indexOf('>') + 1;
+                const innerText = part.substring(startIdx, part.length - 17);
                 
                 const toolDetails = document.createElement('details');
                 toolDetails.className = 'agent-dropdown tool-container';
