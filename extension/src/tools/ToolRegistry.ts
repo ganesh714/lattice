@@ -73,7 +73,7 @@ const CORE_TOOLS = [
     },
     {
         name: "deep_dive_symbol",
-        description: "Fetches a deep dive analysis of a specific symbol from a previously analyzed large file. You MUST call analyze_large_file first.",
+        description: "Fetches the raw source code of a specific symbol from a previously analyzed large file. Returns numbered lines you can read directly — no LLM overhead. You MUST call analyze_large_file first.",
         parameters: {
             type: "object",
             properties: {
