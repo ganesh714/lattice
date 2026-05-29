@@ -1,3 +1,4 @@
+import * as vscode from "vscode";
 import { ModelFactory } from "../../models/ModelFactory";
 import { ChatRequest } from "../../types/schemas";
 import { SupportedLanguage } from "./LanguageDetector";
@@ -25,7 +26,118 @@ async function callModel(
   return "";
 }
 
+// ─── DocumentSymbol → Lattice Symbol Mapper ───────────────────────────────────
+
+function mapDocumentSymbolKind(kind: vscode.SymbolKind): string {
+  const kindMap: Record<number, string> = {
+    [vscode.SymbolKind.File]: "file",
+    [vscode.SymbolKind.Module]: "module",
+    [vscode.SymbolKind.Namespace]: "namespace",
+    [vscode.SymbolKind.Package]: "package",
+    [vscode.SymbolKind.Class]: "class",
+    [vscode.SymbolKind.Method]: "method",
+    [vscode.SymbolKind.Property]: "property",
+    [vscode.SymbolKind.Field]: "field",
+    [vscode.SymbolKind.Constructor]: "constructor",
+    [vscode.SymbolKind.Enum]: "enum",
+    [vscode.SymbolKind.Interface]: "interface",
+    [vscode.SymbolKind.Function]: "function",
+    [vscode.SymbolKind.Variable]: "variable",
+    [vscode.SymbolKind.Constant]: "constant",
+    [vscode.SymbolKind.String]: "string",
+    [vscode.SymbolKind.Number]: "number",
+    [vscode.SymbolKind.Boolean]: "boolean",
+    [vscode.SymbolKind.Array]: "array",
+    [vscode.SymbolKind.Object]: "object",
+    [vscode.SymbolKind.Key]: "key",
+    [vscode.SymbolKind.Null]: "null",
+    [vscode.SymbolKind.EnumMember]: "enum_member",
+    [vscode.SymbolKind.Struct]: "struct",
+    [vscode.SymbolKind.Event]: "event",
+    [vscode.SymbolKind.Operator]: "operator",
+    [vscode.SymbolKind.TypeParameter]: "type_parameter",
+  };
+  return kindMap[kind] ?? "symbol";
+}
+
+/**
+ * Recursively flattens VS Code's DocumentSymbol tree into a flat list of Lattice Symbols.
+ */
+function flattenDocumentSymbols(docSymbols: vscode.DocumentSymbol[], depth = 0): Symbol[] {
+  const symbols: Symbol[] = [];
+  for (const sym of docSymbols) {
+    const startLine = sym.range.start.line + 1; // VS Code is 0-indexed, we use 1-indexed
+    const endLine = sym.range.end.line + 1;
+    symbols.push({
+      type: mapDocumentSymbolKind(sym.kind),
+      name: sym.name,
+      lines: `${startLine}-${endLine}`,
+      description: sym.detail || undefined,
+    });
+    // Recurse into children (methods inside classes, etc.)
+    if (sym.children && sym.children.length > 0) {
+      symbols.push(...flattenDocumentSymbols(sym.children, depth + 1));
+    }
+  }
+  return symbols;
+}
+
+/**
+ * Builds a concise structural skeleton string from DocumentSymbols.
+ * Shows nesting with indentation, similar to what the LLM used to produce.
+ */
+function buildSkeletonFromSymbols(docSymbols: vscode.DocumentSymbol[], indent = ""): string {
+  const lines: string[] = [];
+  for (const sym of docSymbols) {
+    const startLine = sym.range.start.line + 1;
+    const endLine = sym.range.end.line + 1;
+    const detail = sym.detail ? ` — ${sym.detail}` : "";
+    lines.push(`${indent}[${mapDocumentSymbolKind(sym.kind)}] ${sym.name} (L${startLine}-${endLine})${detail}`);
+    if (sym.children && sym.children.length > 0) {
+      lines.push(buildSkeletonFromSymbols(sym.children, indent + "  "));
+    }
+  }
+  return lines.join("\n");
+}
+
+// ─── Pass 1: Skeleton Extraction (VS Code first, LLM fallback) ───────────────
+
 export async function extractSkeleton(
+  workspacePath: string,
+  modelName: string,
+  filePath: string,
+  content: string,
+  language: SupportedLanguage
+): Promise<SkeletonResult> {
+
+  // ── Strategy A: Use VS Code's built-in DocumentSymbolProvider (instant, free) ──
+  try {
+    const uri = vscode.Uri.file(filePath);
+    const docSymbols = await vscode.commands.executeCommand<vscode.DocumentSymbol[]>(
+      "vscode.executeDocumentSymbolProvider",
+      uri
+    );
+
+    if (docSymbols && docSymbols.length > 0) {
+      const symbols = flattenDocumentSymbols(docSymbols);
+      const skeleton = buildSkeletonFromSymbols(docSymbols);
+      console.log(`[FileIntelligence] Skeleton extracted via DocumentSymbolProvider: ${symbols.length} symbols`);
+      return { language, skeleton, symbols };
+    }
+  } catch (e: any) {
+    console.warn(`[FileIntelligence] DocumentSymbolProvider failed for ${filePath}: ${e.message}`);
+  }
+
+  // ── Strategy B: LLM fallback (for languages without symbol provider support) ──
+  console.log(`[FileIntelligence] DocumentSymbolProvider returned nothing for ${filePath}, falling back to LLM skeleton extraction`);
+  return await extractSkeletonViaLLM(workspacePath, modelName, filePath, content, language);
+}
+
+/**
+ * LLM-based skeleton extraction — only used when VS Code's DocumentSymbolProvider
+ * returns no results (e.g., plain HTML, CSS without proper language extensions).
+ */
+async function extractSkeletonViaLLM(
   workspacePath: string,
   modelName: string,
   filePath: string,
@@ -89,6 +201,8 @@ ${content.substring(0, 12000)}${content.length > 12000 ? "\n... (truncated for s
   }
 }
 
+// ─── Pass 2: Build Symbol Index ───────────────────────────────────────────────
+
 export async function buildSymbolIndex(
   workspacePath: string,
   modelName: string,
@@ -139,14 +253,21 @@ ${chunk.content}
   };
 }
 
-export async function deepDive(
-  workspacePath: string,
-  modelName: string,
+// ─── Pass 3: Extract Symbol Code (Raw — No LLM Call) ─────────────────────────
+
+/**
+ * Extracts the raw source code for a symbol from the file.
+ * Returns numbered lines ready for the planner to analyze directly.
+ * 
+ * NO LLM CALL — the ReAct Planner is already an LLM; it can analyze
+ * the code itself within its own context window.
+ */
+export function extractSymbolCode(
   content: string,
   language: SupportedLanguage,
   symbolName: string,
   index: SymbolIndex
-): Promise<string> {
+): string {
   const symbol = index.symbols.find(
     (s) => s.name.toLowerCase() === symbolName.toLowerCase()
   );
@@ -157,31 +278,17 @@ export async function deepDive(
       .join(", ")}`;
   }
 
+  const lines = content.split("\n");
   const [startStr, endStr] = symbol.lines.split("-");
   const start = Math.max(0, parseInt(startStr, 10) - 1);
-  const end = Math.min(
-    content.split("\n").length,
-    parseInt(endStr, 10) + 10
-  );
-  const excerpt = content.split("\n").slice(start, end).join("\n");
+  // Include a small buffer after the symbol to capture closing braces/brackets
+  const end = Math.min(lines.length, parseInt(endStr, 10) + 5);
+  const excerpt = lines.slice(start, end);
 
-  const systemInstruction = `Deeply analyze this ${language} code excerpt.`;
-  const prompt = `
-Deeply analyze this ${language} code excerpt (symbol: "${symbolName}"):
+  // Return numbered lines so the planner has precise line references
+  const numbered = excerpt
+    .map((line, i) => `${start + i + 1}: ${line}`)
+    .join("\n");
 
-\`\`\`${language}
-${excerpt}
-\`\`\`
-
-Provide:
-1. Purpose and responsibility
-2. Inputs / parameters / dependencies
-3. Outputs / side effects
-4. Any notable patterns or issues
-5. How it connects to other parts of the codebase (based on names/imports you see)
-
-Be concise and technical.
-`;
-
-  return await callModel(workspacePath, modelName, systemInstruction, prompt);
+  return `## Symbol: ${symbolName} [${symbol.type}] (lines ${symbol.lines})\n\`\`\`${language}\n${numbered}\n\`\`\``;
 }
