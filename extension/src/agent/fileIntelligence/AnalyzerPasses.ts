@@ -214,9 +214,19 @@ export async function buildSymbolIndex(
   const allSymbols: Symbol[] = [...skeletonSymbols];
 
   if (chunks.length > 1) {
-    for (const chunk of chunks) {
-      const systemInstruction = `You are indexing a ${language} file chunk. Extract all symbols.`;
-      const prompt = `
+    // Run all chunks in parallel — small models have lower context limits so
+    // we guard each chunk's content size before sending.
+    // Promise.allSettled means one bad chunk never blocks the rest.
+    const MAX_CHUNK_CHARS = 8000; // Safe for small models (~2k tokens)
+
+    const chunkResults = await Promise.allSettled(
+      chunks.map(async (chunk) => {
+        const safeContent = chunk.content.length > MAX_CHUNK_CHARS
+          ? chunk.content.substring(0, MAX_CHUNK_CHARS) + '\n... (truncated)'
+          : chunk.content;
+
+        const systemInstruction = `You are indexing a ${language} file chunk. Extract all symbols.`;
+        const prompt = `
 Extract all symbols (functions, classes, selectors, components, etc.) from this chunk.
 
 Return ONLY a JSON array (no markdown):
@@ -226,21 +236,24 @@ CRITICAL RULE: The "lines" field MUST be exactly scoped to the symbol. Do not us
 
 CHUNK (lines ${chunk.startLine}–${chunk.endLine}):
 \`\`\`${language}
-${chunk.content}
+${safeContent}
 \`\`\`
 `;
-      try {
         const raw = await callModel(workspacePath, modelName, systemInstruction, prompt);
         const cleaned = raw.replace(/```json|```/g, "").trim();
-        const parsed: Symbol[] = JSON.parse(cleaned);
-        for (const sym of parsed) {
+        return JSON.parse(cleaned) as Symbol[];
+      })
+    );
+
+    for (const result of chunkResults) {
+      if (result.status === 'fulfilled') {
+        for (const sym of result.value) {
           if (!allSymbols.find((s) => s.name === sym.name)) {
             allSymbols.push(sym);
           }
         }
-      } catch {
-        // Skip failed chunk silently
       }
+      // Rejected chunks are silently skipped — skeleton symbols still provide coverage
     }
   }
 
@@ -280,10 +293,35 @@ export function extractSymbolCode(
 
   const lines = content.split("\n");
   const [startStr, endStr] = symbol.lines.split("-");
-  const start = Math.max(0, parseInt(startStr, 10) - 1);
+  let start = Math.max(0, parseInt(startStr, 10) - 1);
   // Include a small buffer after the symbol to capture closing braces/brackets
-  const end = Math.min(lines.length, parseInt(endStr, 10) + 5);
+  let end = Math.min(lines.length, parseInt(endStr, 10) + 5);
+
+  // Fix C: Validate that the extracted range actually contains the symbol name.
+  // LLM-based skeleton extraction can hallucinate line numbers, causing deep_dive_symbol
+  // to return code for the WRONG symbol (e.g., asking for "applyThemeSynchronized" but
+  // getting "clearErrors" because the index has wrong line numbers).
   const excerpt = lines.slice(start, end);
+  const excerptText = excerpt.join("\n");
+  if (!excerptText.includes(symbolName)) {
+    // Fallback: search the entire file for the symbol name
+    const fallbackStart = lines.findIndex(line => line.includes(symbolName));
+    if (fallbackStart !== -1) {
+      // Found the symbol — extract a reasonable window around it
+      start = Math.max(0, fallbackStart - 2);
+      end = Math.min(lines.length, fallbackStart + 50);
+      const fallbackExcerpt = lines.slice(start, end);
+      const numbered = fallbackExcerpt
+        .map((line, i) => `${start + i + 1}: ${line}`)
+        .join("\n");
+      return `## Symbol: ${symbolName} [${symbol.type}] (lines ${start + 1}-${end}) [corrected from index ${symbol.lines}]\n\`\`\`${language}\n${numbered}\n\`\`\``;
+    }
+    // Symbol name not found anywhere — return the indexed range with a warning
+    const numbered = excerpt
+      .map((line, i) => `${start + i + 1}: ${line}`)
+      .join("\n");
+    return `## Symbol: ${symbolName} [${symbol.type}] (lines ${symbol.lines}) [WARNING: symbol name not found in extracted range — index may have wrong line numbers]\n\`\`\`${language}\n${numbered}\n\`\`\``;
+  }
 
   // Return numbered lines so the planner has precise line references
   const numbered = excerpt
