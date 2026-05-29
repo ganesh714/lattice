@@ -80,7 +80,10 @@ export class AgentExecutor {
                 const summary = await Critic.compressSession(history, [], l2Model); 
                 
                 const lastUser = [...history].reverse().find(m => m.role === 'user');
-                history.length = 0;
+
+                // Use splice instead of history.length = 0 to safely clear the array
+                // without breaking any external references that hold the same array object.
+                history.splice(0, history.length);
                 history.push({ role: 'system', text: summary });
                 if (lastUser) history.push(lastUser);
 
