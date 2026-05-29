@@ -36,12 +36,14 @@ export class ReActPlanner {
         feedback?: string
     ): Promise<{ plan: string; contextSummary: string }> {
         let toolHistory: ToolResponse[] = [];
-        let consecutiveToolCalls = 0;
+        let totalToolCalls = 0;      // Productive tool calls toward the budget
+        let errorRetries = 0;        // Recoverable errors — tracked separately so they don't eat the planning budget
         let isDone = false;
         let collectedFiles: string[] = [];
         let previousToolCalls: string[] = []; // Track to prevent duplicates
         let reasoningHistory: string[] = [];
         let discoveries: string[] = []; // Running scratchpad of confirmed facts
+        const MAX_ERROR_RETRIES = 5; // Cap on recoverable errors before giving up
 
         const feedbackSection = feedback
             ? `\n\n--- FEEDBACK FROM PREVIOUS REVIEW ---
@@ -140,6 +142,9 @@ Do NOT start with "I have learned..." — start with what's wrong or missing.`;
                     if (text.includes('<FINAL_PLAN>')) {
                         text = text.split('<FINAL_PLAN>')[0].trim();
                     }
+                    // Strip tool call hallucinations — small models sometimes emit <function=...> or JSON blobs
+                    // from the Analyzer despite being told "You CANNOT call tools"
+                    text = text.replace(/<function=\w+>\s*\{[\s\S]*?\}\s*<\/function>/g, '').trim();
 
                     if (text) {
                         ui.removeLoading();
@@ -148,6 +153,18 @@ Do NOT start with "I have learned..." — start with what's wrong or missing.`;
                         if (ui.addMessage) ui.addMessage(thinkUiText, false);
 
                         reasoningHistory.push(text);
+
+                        // Prune currentPrompt before appending new reasoning to prevent
+                        // unbounded context growth that degrades small models.
+                        // Keep only the latest 2 Analyzer blocks — prior ones are already
+                        // preserved in toolHistory (full tool results) and discoveries (extracted facts).
+                        const KEEP_LAST_N_REASONING = 2;
+                        const reasoningBlocks = currentPrompt.split('\n\n[Analyzer Agent Reasoning]:');
+                        if (reasoningBlocks.length > KEEP_LAST_N_REASONING + 1) {
+                            currentPrompt = reasoningBlocks[0] +
+                                '\n\n[Analyzer Agent Reasoning]:' +
+                                reasoningBlocks.slice(-(KEEP_LAST_N_REASONING)).join('\n\n[Analyzer Agent Reasoning]:');
+                        }
                         currentPrompt += `\n\n[Analyzer Agent Reasoning]:\n${text}`;
                     }
                 }
@@ -179,7 +196,7 @@ Do NOT start with "I have learned..." — start with what's wrong or missing.`;
                 );
             } catch (e: any) {
                 currentPrompt += `\n\n[System Error during Actor Phase]: Actor API Error: ${e.message}\nFix your tool arguments.`;
-                consecutiveToolCalls++;
+                errorRetries++;
                 ui.addStep('❌', 'API Error', e.message.substring(0, 80));
                 
                 // If it's a catastrophic API error (e.g. 503, rate limit), don't silent loop forever
@@ -187,7 +204,7 @@ Do NOT start with "I have learned..." — start with what's wrong or missing.`;
                     throw e; 
                 }
 
-                if (consecutiveToolCalls > this.MAX_TOOL_CALLS) break;
+                if (errorRetries > MAX_ERROR_RETRIES) break;
                 continue;
             }
 
@@ -207,7 +224,7 @@ Do NOT start with "I have learned..." — start with what's wrong or missing.`;
                         content: `Error: You cannot use ${toolName} during planning.`,
                         arguments: toolArgs
                     });
-                    consecutiveToolCalls++;
+                    errorRetries++;
                     continue;
                 }
 
@@ -219,8 +236,8 @@ Do NOT start with "I have learned..." — start with what's wrong or missing.`;
                         arguments: toolArgs
                     });
                     ui.addStep('⚠️', 'Repeated Tool', `Agent tried to call ${toolName} again.`);
-                    consecutiveToolCalls++;
-                    if (consecutiveToolCalls > this.MAX_TOOL_CALLS) break;
+                    errorRetries++;
+                    if (errorRetries > MAX_ERROR_RETRIES) break;
                     continue;
                 }
                 previousToolCalls.push(callSignature);
@@ -302,19 +319,19 @@ Do NOT start with "I have learned..." — start with what's wrong or missing.`;
                 const resultMessage = `<tool_execution><summary><span class="summary-text">↳ Output <span style="opacity:0.7; font-size:0.9em; font-weight:normal;">(⏱️ ${toolDuration}s)</span></span></summary><div class="details-content"><pre style="max-height: 250px; overflow-y: auto; font-size: 0.85em; background: var(--vscode-editor-background); padding: 8px; border-radius: 4px;"><code>${safeOutput}</code></pre></div></tool_execution>`;
                 if (ui.addMessage) ui.addMessage(resultMessage, false);
 
-                consecutiveToolCalls++;
+                totalToolCalls++;
 
-                if (consecutiveToolCalls > this.MAX_TOOL_CALLS) {
+                if (totalToolCalls > this.MAX_TOOL_CALLS) {
                     currentPrompt += `\n\n[System Warning]: You used ${this.MAX_TOOL_CALLS} tool calls. Output <FINAL_PLAN> NOW.`;
                 }
             } else {
                 // Actor returned text instead of a tool call
                 const hasPlan = data.content.includes('<FINAL_PLAN>');
                 if (!hasPlan) {
-                    // Actor failed to call a tool or output a plan. Treat as error to force retry.
+                    // Actor failed to call a tool or output a plan — count as error retry, not budget
                     currentPrompt += `\n\n[System Error]: Actor Agent failed to call a tool or output a plan. It output plain text:\n${data.content}\nError: You must either call a tool or output <FINAL_PLAN>...</FINAL_PLAN>.`;
-                    consecutiveToolCalls++;
-                    if (consecutiveToolCalls > this.MAX_TOOL_CALLS) break;
+                    errorRetries++;
+                    if (errorRetries > MAX_ERROR_RETRIES) break;
                     continue;
                 }
 
@@ -402,24 +419,61 @@ Do NOT start with "I have learned..." — start with what's wrong or missing.`;
 
     /**
      * Attempts to parse inline tool calls embedded in text.
+     * Small models often emit JSON blobs or <function=...> wrappers instead of native tool calls.
+     * Handles all 6 planning tools: list_directory_tree, read_full_file,
+     * read_file_chunk, search_workspace_regex, analyze_large_file, deep_dive_symbol.
      */
     private static tryParseInlineToolCall(content: string): AIResponse | null {
         if (content.includes('<FINAL_PLAN>')) { return null; }
 
-        const matches = content.match(/\{[^{}]*(?:"pattern"|"relative_path")[^{}]*\}/g);
+        // Fix A: Parse <function=tool_name>{json}</function> format (common hallucination from small models)
+        const funcMatch = content.match(/<function=(\w+)>\s*(\{[\s\S]*?\})\s*<\/function>/);
+        if (funcMatch) {
+            try {
+                const toolName = funcMatch[1];
+                const args = JSON.parse(funcMatch[2]);
+                // Map hallucinated tool names to real ones
+                const nameMap: Record<string, string> = {
+                    'analyze_function': 'deep_dive_symbol',
+                    'read_file': 'read_full_file',
+                    'search': 'search_workspace_regex',
+                    'list_dir': 'list_directory_tree',
+                };
+                const resolvedName = nameMap[toolName] || toolName;
+                return { type: 'tool_call', tool_name: resolvedName, arguments: args };
+            } catch {}
+        }
+
+        // Standard JSON blob parsing
+        const matches = content.match(/\{[^{}]{5,500}\}/g);
         if (!matches) { return null; }
 
         for (const match of matches) {
             try {
                 const args = JSON.parse(match);
+
+                // search_workspace_regex
                 if (typeof args.pattern === 'string') {
                     return { type: 'tool_call', tool_name: 'search_workspace_regex', arguments: args };
                 }
+                // deep_dive_symbol (most specific — requires both symbol_name and relative_path)
+                if (typeof args.symbol_name === 'string' && typeof args.relative_path === 'string') {
+                    return { type: 'tool_call', tool_name: 'deep_dive_symbol', arguments: args };
+                }
+                // analyze_large_file
+                if (typeof args.relative_path === 'string' && args.analyze === true) {
+                    return { type: 'tool_call', tool_name: 'analyze_large_file', arguments: args };
+                }
+                // read_file_chunk
+                if (typeof args.relative_path === 'string' && typeof args.start_line === 'number' && typeof args.end_line === 'number') {
+                    return { type: 'tool_call', tool_name: 'read_file_chunk', arguments: args };
+                }
+                // read_full_file vs list_directory_tree — disambiguate by depth field
                 if (typeof args.relative_path === 'string') {
-                    if (typeof args.start_line === 'number' && typeof args.end_line === 'number') {
-                        return { type: 'tool_call', tool_name: 'read_file_chunk', arguments: args };
+                    if (typeof args.depth === 'number') {
+                        return { type: 'tool_call', tool_name: 'list_directory_tree', arguments: args };
                     }
-                    return { type: 'tool_call', tool_name: 'list_directory_tree', arguments: args };
+                    return { type: 'tool_call', tool_name: 'read_full_file', arguments: args };
                 }
             } catch { continue; }
         }
