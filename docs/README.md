@@ -1,6 +1,6 @@
 # Lattice Documentation
 
-This folder documents the low-level structure of the Lattice VS Code extension and its supporting backend.
+This folder documents the low-level structure of the Lattice VS Code extension.
 
 Start here:
 
@@ -19,5 +19,4 @@ Lattice is a VS Code sidebar assistant with a tiered agent architecture:
 - L2 Critic: reviews plans and compresses long session history.
 - UI Approval Gates: pause risky actions before execution or file mutation.
 
-The extension lives under `extension/`. The older Python backend lives under `backend/`.
-
+The extension lives under `extension/`.

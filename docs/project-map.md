@@ -4,7 +4,6 @@
 
 ```text
 .
-├── backend/
 ├── docs/
 ├── extension/
 └── tests/
@@ -93,12 +92,6 @@ Sidebar UI.
 ### `src/types/`
 
 Shared TypeScript interfaces for model requests, tool calls, text responses, and chat history.
-
-## `backend/`
-
-Python backend and client experiments.
-
-Current extension code primarily uses the TypeScript provider layer in `extension/src/models/`. Treat `backend/` as a separate support or legacy surface unless a feature explicitly routes through it.
 
 ## `tests/`
 
