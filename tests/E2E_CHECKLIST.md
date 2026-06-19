@@ -14,7 +14,7 @@ Prerequisites
   - The loading indicator shows short status updates like `Routing intent (L0)...` then `Thinking...`.
 
 2) Lane 2 — Work Path (Clean edit + Diff Approval)
-- Prompt: `Add a /logout endpoint to backend/main.py that clears the session cookie and returns 204.`
+- Prompt: `Add a dummy function to extension/src/extension.ts and call it on activation.`
 - Expected:
   - L0 Router classifies as `code_edit` and enters the Work Path.
   - The agent proposes an edit and the webview displays an inline diff card with Accept / Reject buttons.
@@ -24,7 +24,7 @@ Prerequisites
   - The agent applies the edit (file is modified on disk) and `get_workspace_diagnostics()` reports no errors.
 
 3) Lane 2 — Self-Healing (introduce and fix a syntax error)
-- Prompt: `Make a small change in backend/main.py that intentionally introduces a syntax error, then fix it.`
+- Prompt: `Make a small change in extension/src/extension.ts that intentionally introduces a syntax error, then fix it.`
   (Alternatively, ask the agent to add code known to be syntactically invalid, e.g., missing colon.)
 - Expected:
   - Agent performs `edit_file_diff` and the edit is applied.
